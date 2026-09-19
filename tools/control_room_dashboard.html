@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cuarto de Control - Campus UNAB Gestión de Emergencias</title>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --accent:#38bdf8; --ok:#22c55e; --warn:#f59e0b; --crit:#ef4444; }
+  * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',system-ui,sans-serif; }
+  body { background:var(--bg); color:#e2e8f0; min-height:100vh; }
+  header { padding:1rem 1.5rem; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; }
+  header h1 { font-size:1.2rem; color:var(--accent); }
+  .badge-tenant { background:#334155; padding:.3rem .8rem; border-radius:999px; font-size:.75rem; }
+  #clock { font-size:.85rem; color:#94a3b8; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; padding:1.5rem; }
+  .kpi { background:var(--card); border:1px solid #334155; border-radius:.8rem; padding:1rem; }
+  .kpi .label { font-size:.75rem; color:#94a3b8; text-transform:uppercase; letter-spacing:.05em; }
+  .kpi .value { font-size:2rem; font-weight:700; margin-top:.3rem; }
+  .kpi .sub { font-size:.75rem; color:#64748b; margin-top:.2rem; }
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:1rem; padding:0 1.5rem 1.5rem; }
+  .chart-card { background:var(--card); border:1px solid #334155; border-radius:.8rem; padding:1rem; }
+  .chart-card h3 { font-size:.85rem; color:var(--accent); margin-bottom:.8rem; }
+  .node-status { padding:0 1.5rem 2rem; }
+  .node-status table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  .node-status th, .node-status td { padding:.5rem; text-align:left; border-bottom:1px solid #334155; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:.4rem; }
+  .dot.on { background:var(--ok); } .dot.off { background:var(--crit); }
+  .alarm { color:var(--crit); font-weight:700; }
+  svg { width:100%; height:140px; }
+  .bar { fill:var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏛️ Cuarto de Control - Campus UNAB · Gestión de Emergencias</h1>
+  <div style="display:flex;gap:.5rem;align-items:center;">
+    <span class="badge-tenant">Template: campus-emergency-v1</span>
+    <span id="clock"></span>
+  </div>
+</header>
+
+<section class="kpis">
+  <div class="kpi"><div class="label">Total Dispositivos</div><div class="value" id="kpi-total">10</div><div class="sub">flota heterogénea</div></div>
+  <div class="kpi"><div class="label">Conectados</div><div class="value" style="color:var(--ok)" id="kpi-on">10</div><div class="sub">envío de telemetría activo</div></div>
+  <div class="kpi"><div class="label">Desconectados</div><div class="value" style="color:var(--crit)" id="kpi-off">0</div><div class="sub">sin telemetría</div></div>
+  <div class="kpi"><div class="label">Alertas Activas</div><div class="value" style="color:var(--warn)" id="kpi-alerts">0</div><div class="sub">reglas de umbral</div></div>
+</section>
+
+<section class="charts">
+  <div class="chart-card"><h3>🌡️ Temperatura por Zona (°C)</h3><svg id="chart-temp"></svg></div>
+  <div class="chart-card"><h3>🌫️ CO₂ por Aula (ppm)</h3><svg id="chart-co2"></svg></div>
+  <div class="chart-card"><h3>💨 PM2.5 Exterior (µg/m³)</h3><svg id="chart-pm"></svg></div>
+  <div class="chart-card"><h3>🚨 Alarmas por Bloque</h3><svg id="chart-alarms"></svg></div>
+</section>
+
+<section class="node-status">
+  <h3 style="color:var(--accent);margin-bottom:.8rem;">Estado de Nodos</h3>
+  <table id="nodes"><thead><tr><th>Nodo</th><th>Zona</th><th>Origen</th><th>Intervalo</th><th>Estado</th><th>Última lectura</th></tr></thead><tbody></tbody></table>
+</section>
+
+<script>
+const NODES = [
+  {id:"D1", zona:"Estación meteo campus",  origen:"SDK Python",   int:"15 s",  temp:24.8, co2:520,  pm:12, alarm:0},
+  {id:"D2", zona:"Meteo patio / cubierta",  origen:"Wokwi ESP32", int:"30 s",  temp:25.1, co2:480,  pm:10, alarm:0},
+  {id:"D3", zona:"Incendio Bloque A",       origen:"SDK Python",  int:"20 s",  temp:26.3, co2:610,  pm:15, alarm:1},
+  {id:"D4", zona:"Incendio Laboratorio",    origen:"SDK Python",  int:"30 s",  temp:25.9, co2:890,  pm:18, alarm:1},
+  {id:"D5", zona:"Calidad aire aula",       origen:"Open-Meteo",  int:"45 s",  temp:23.4, co2:920,  pm:22, alarm:0},
+  {id:"D6", zona:"Calidad aire exterior",   origen:"Atlas/WAQI",  int:"300 s", temp:24.2, co2:450,  pm:31, alarm:0},
+  {id:"D7", zona:"Acceso principal",        origen:"MQTT",        int:"15 s",  temp:25.0, co2:510,  pm:12, alarm:0},
+  {id:"D8", zona:"Cerramiento norte",       origen:"Replay CSV",  int:"60 s",  temp:21.9, co2:440,  pm:9,  alarm:0},
+  {id:"D9", zona:"Evacuación pasillo",      origen:"SDK Python",  int:"20 s",  temp:24.6, co2:540,  pm:11, alarm:0},
+  {id:"D10",zona:"Puesto de mando",         origen:"HTTP bridge", int:"30 s",  temp:25.2, co2:500,  pm:13, alarm:0},
+];
+const COLORS = ["#38bdf8","#22c55e","#f59e0b","#ef4444","#a78bfa","#f472b6"];
+
+function clock(){ document.getElementById("clock").textContent = new Date().toLocaleString("es-CO"); }
+setInterval(clock, 1000); clock();
+
+function bars(id, values, labels, color){
+  const el = document.getElementById(id);
+  const max = Math.max(...values) * 1.15;
+  const W = 560, H = 140, bw = W / values.length * 0.6;
+  let html = "";
+  values.forEach((v,i)=>{
+    const h = (v/max)*H;
+    html += `<rect class="bar" x="${i*(W/values.length)}" y="${H-h}" width="${bw}" height="${h}" fill="${color||COLORS[i%COLORS.length]}"><title>${labels[i]}: ${v}</title></rect>`;
+    html += `<text x="${i*(W/values.length)+bw/2}" y="${H-4}" text-anchor="middle" font-size="9" fill="#cbd5e1">${labels[i]}</text>`;
+  });
+  html += `<line x1="0" y1="${H}" x2="${W}" y2="${H}" stroke="#334155" stroke-width="1"/>`;
+  el.innerHTML = html;
+}
+
+const zones = NODES.map(n=>n.zona.split(" ")[0]);
+bars("chart-temp",  NODES.map(n=>n.temp), zones);
+bars("chart-co2",   NODES.map(n=>n.co2),  zones);
+bars("chart-pm",    NODES.map(n=>n.pm),   zones, "#f59e0b");
+bars("chart-alarms",NODES.map(n=>n.alarm),zones, "#ef4444");
+
+const tbody = document.querySelector("#nodes tbody");
+NODES.forEach(n=>{
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><b>${n.id}</b></td><td>${n.zona}</td><td>${n.origen}</td><td>${n.int}</td>
+    <td><span class="dot on"></span>Conectado</td><td>ahora</td>`;
+  tbody.appendChild(tr);
+  if(n.alarm > 0) tr.classList.add("alarm");
+});
+
+document.getElementById("kpi-alerts").textContent = NODES.filter(n=>n.alarm>0).length;
+document.getElementById("kpi-alerts").style.color = document.getElementById("kpi-alerts").textContent === "0" ? "var(--warn)" : "var(--crit)";
+</script>
+</body>
+</html>
