@@ -64,6 +64,47 @@ El escenario cubre monitoreo meteorológico, detección de incendios, calidad de
 └── requirements.txt        # Dependencias Python
 ```
 
+---
+
+## 🔄 Cambios Juan — 2026-09-19
+
+### ✅ Lo que quedó listo
+
+**Código — Fase 1 completa**
+- Corregidos todos los bugs críticos en los 11 scripts Python y el sketch ESP32 (D2)
+- D1: SyntaxError fatal corregido — ya conecta y envía telemetría
+- D3: `main()` no hacía nada — reescrito completo para que conecte y envíe
+- D4: comandos remotos (`handle_command`) usaban API incorrecta del SDK — corregido
+- D5: reemplazada API falsa — ahora usa Open-Meteo real para temperatura/humedad/viento; CO2 y PM etiquetados como simulados
+- D6: URL de Atlas Weather no existe — reemplazada con WAQI (calidad de aire real gratuita)
+- D7: imports faltantes, broker MQTT incorrecto — corregido
+- D8: bug en `timedelta`, desconexión/reconexión verificada con timestamps reales
+- D9: `random.choices()` sin argumento obligatorio — corregía con TypeError en cada ciclo
+- D10: JSON anidado aplanado a campos escalares (IoT Central no grafica objetos anidados)
+- Bridge D2: `SyntaxError` en asignación — bridge nunca arrancaba
+- Sketch Wokwi D2: no tenía WiFi.begin ni MQTT publish — reescrito completo
+
+**Preparación Azure — Fase 2**
+- `iotcentral/device_template_campus_emergency_v1.json` — plantilla DTDL con los 34 campos reales de los 10 dispositivos, lista para importar directo en IoT Central
+- `.env.example` — reescrito con las variables reales que lee cada script (D3 tiene nombre de variable distinto, documentado)
+- `python/provision_devices.py` — script que obtiene los connection strings de Azure via DPS; solo necesita ID Scope + Master Key
+
+### ⏳ Lo que falta (requiere Azure)
+
+- Crear la app en **Azure IoT Central** (`campus-ems`)
+- Importar `iotcentral/device_template_campus_emergency_v1.json` como Device Template
+- Registrar los 10 dispositivos (`campus-ems-01` al `campus-ems-10`)
+- Correr `python/provision_devices.py` con el ID Scope y Master Key de la app → genera los connection strings
+- Crear `.env` con esos connection strings y probar D1 primero
+- Verificar D1 en Azure como **Connected** con telemetría llegando → luego D4 → luego el resto
+- D8: probar `--send-to-cloud --disconnect-at N` y capturar el hueco en Azure
+- D2: probar flujo completo Wokwi → MQTT → bridge → Azure
+
+### ❌ No tocar todavía
+Dashboard, reglas de alerta, históricos CSV de 4 días, screenshots finales — eso va después de tener los dispositivos conectados.
+
+---
+
 ## ⚠️ Consideraciones de Seguridad
 
 - **NUNCA** almacenar credenciales, connection strings ni secretos en el repositorio
