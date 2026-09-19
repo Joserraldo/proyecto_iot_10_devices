@@ -1,46 +1,52 @@
 {
   "title": "D2 - Meteo patio / cubierta - Campus UNAB",
-  "description": "ESP32 simulado en Wokwi para monitoreo de condiciones patio y cubierta",
+  "description": "ESP32 simulado en Wokwi para monitoreo de condiciones patio y cubierta. Publica temperatura, humedad y lux cada 30 s via MQTT.",
   "tags": ["wokwi", "esp32", "MQTT", "campus-ems", "D2"],
   "hardware": {
     "board": "esp32",
     "connectivity": {
       "wifi": {
-        "ssid": "${WOKWI_WIFI_SSID}",
-        "pass": "${WOKWI_WIFI_PASS}"
+        "ssid": "Wokwi-GUEST",
+        "password": ""
       },
       "mqtt": {
-        "broker": "test.mqtt.org",
+        "broker": "test.mosquitto.org",
         "port": 1883,
-        "topic": "campus/ems/D2"
+        "topic": "campus/ems/D2",
+        "client_id": "campus-ems-02"
       }
     }
   },
   "components": [
     {
-      "type": "sensor_dht22",
+      "type": "wokwi-dht22",
       "id": "dht",
-      "pin": 4,
-      "variables": ["temperature", "humidity"]
+      "attrs": { "pin": "4" }
     },
     {
-      "type": "sensor_bh1750",
+      "type": "wokwi-bh1750",
       "id": "lux",
-      "pin": 34,
-      "variables": ["lux"]
+      "attrs": { "sda": "21", "scl": "22" }
     },
     {
-      "type": "actuator_led",
+      "type": "wokwi-led",
       "id": "led",
-      "pin": 2,
-      "variables": ["led_state"]
+      "attrs": { "color": "green", "pin": "2" }
     }
   ],
-  "program": "arduino\n\
-#include <DHT.h>\\n\\n\\n#define DHTPIN 4#define DHTTYPE DHT22 \\nDHT dht(DHTPIN, DHTTYPE);\\n#include <BH1750.h>\\nBH1750 luxMeter;\\n\\nvoid setup() {\\n  Serial.begin(115200);\\n  dht.begin();\\n  luxMeter.begin();\\n  Serial.println(\"Wokwi D2 Started\");\\n}\\n\\nvoid loop() {\\n  // Lectura DHT22\\n  float h = dht.readHumidity();\\n  float t = dht.readTemperature();\\n  if (isnan(h) || isnan(t)) { Serial.println(\"Failed to read from DHT!\"); } else { \\n    Serial.print(\"Temp: \"); Serial.print(t); \\n    Serial.print(\" \"); Serial.print(\"Hum: \"); Serial.println(h); \\n  }\\n  // Lectura BH1750\\n  luxLevel = luxMeter.readLightLevel();\\n  Serial.print(\"Lux: \"); Serial.println(luxLevel);\\n  // Publicar via MQTT\\n  publishSensorData(t, h, luxLevel);\\n  delay(30000); \\n  // 30 segundos interval\\n}\\n\\nvoid publishSensorData(float temp, float hum, float lux) {\\n  char payload[128];\\n  snprintf(payload, sizeof(payload), \\\"{\\\\\"temperature\\\\\":\\\\\"%0.1f\\\\\",\\\\\"humidity\\\\\":\\\\\"%0.1f\\\\\",\\\\\"lux\\\\\":\\\\\"%0.1f\\\\\"}\\\", temp, hum, lux);\\n  // MQTT publish to campus/ems/D2\\n  // client.publish(\"campus/ems/D2\", payload);\\n  Serial.print(\"Published: \"); Serial.println(payload);\\n}\\n",
+  "notes": [
+    "Sketch: sketch.ino (ver abajo). Requiere librerías DHT, BH1750, PubSubClient en Wokwi.",
+    "Publicar en: campus/ems/D2 cada 30 s",
+    "Formato JSON: {temperature: float, humidity: float, lux: float}",
+    "El bridge mqtt_bridge_wokwi.py suscribe a este tópico y reenvía a Azure IoT Central."
+  ],
+  "sketch": "/*\n  D2 - Meteo patio/cubierta - Campus UNAB\n  Wokwi ESP32: DHT22 + BH1750 + MQTT\n  Publica cada 30s en campus/ems/D2\n  Formato: {\"temperature\":XX.X,\"humidity\":XX.X,\"lux\":XX.X}\n*/\n\n#include <WiFi.h>\n#include <PubSubClient.h>\n#include <DHT.h>\n#include <Wire.h>\n#include <BH1750.h>\n\n// --- Configuracion WiFi (Wokwi-GUEST para simulador) ---\nconst char* ssid     = \"Wokwi-GUEST\";\nconst char* password = \"\";\n\n// --- Configuracion MQTT ---\nconst char* mqtt_server  = \"test.mosquitto.org\";\nconst int   mqtt_port    = 1883;\nconst char* mqtt_topic   = \"campus/ems/D2\";\nconst char* client_id    = \"campus-ems-02\";\n\n// --- Sensores ---\n#define DHTPIN  4\n#define DHTTYPE DHT22\nDHT   dht(DHTPIN, DHTTYPE);\nBH1750 luxMeter;\n\n// --- Clientes ---\nWiFiClient   espClient;\nPubSubClient mqttClient(espClient);\n\n// --- LED estado ---\n#define LED_PIN 2\n\nvoid connectWiFi() {\n  Serial.print(\"Conectando WiFi\");\n  WiFi.begin(ssid, password);\n  int attempts = 0;\n  while (WiFi.status() != WL_CONNECTED && attempts < 20) {\n    delay(500);\n    Serial.print(\".\");\n    attempts++;\n  }\n  if (WiFi.status() == WL_CONNECTED) {\n    Serial.println(\"\\nWiFi OK: \" + WiFi.localIP().toString());\n  } else {\n    Serial.println(\"\\nWiFi FALLO — continuando sin red\");\n  }\n}\n\nvoid connectMQTT() {\n  while (!mqttClient.connected()) {\n    Serial.print(\"Conectando MQTT...\");\n    if (mqttClient.connect(client_id)) {\n      Serial.println(\"OK\");\n      digitalWrite(LED_PIN, HIGH);\n    } else {\n      Serial.print(\"Fallo rc=\");\n      Serial.print(mqttClient.state());\n      Serial.println(\" reintentando en 5s\");\n      delay(5000);\n    }\n  }\n}\n\nvoid publishData(float temp, float hum, float lux) {\n  char payload[128];\n  snprintf(payload, sizeof(payload),\n           \"{\\\"temperature\\\":%.1f,\\\"humidity\\\":%.1f,\\\"lux\\\":%.1f,\\\"source\\\":\\\"wokwi-d2\\\"}\",\n           temp, hum, lux);\n\n  bool ok = mqttClient.publish(mqtt_topic, payload);\n  if (ok) {\n    Serial.print(\"[D2] Publicado en \");\n    Serial.print(mqtt_topic);\n    Serial.print(\": \");\n    Serial.println(payload);\n  } else {\n    Serial.println(\"[D2] Error publicando MQTT\");\n  }\n}\n\nvoid setup() {\n  Serial.begin(115200);\n  pinMode(LED_PIN, OUTPUT);\n  digitalWrite(LED_PIN, LOW);\n\n  dht.begin();\n  Wire.begin(21, 22);   // SDA=21 SCL=22 en ESP32\n  luxMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE);\n\n  connectWiFi();\n  mqttClient.setServer(mqtt_server, mqtt_port);\n  mqttClient.setKeepAlive(60);\n  connectMQTT();\n\n  Serial.println(\"[D2] Setup completo\");\n}\n\nvoid loop() {\n  // Mantener conexion MQTT\n  if (!mqttClient.connected()) {\n    digitalWrite(LED_PIN, LOW);\n    connectMQTT();\n  }\n  mqttClient.loop();\n\n  // Lectura sensores\n  float h    = dht.readHumidity();\n  float t    = dht.readTemperature();\n  float lux  = luxMeter.readLightLevel();\n\n  if (isnan(h) || isnan(t)) {\n    Serial.println(\"[D2] Error leyendo DHT22\");\n  } else {\n    publishData(t, h, lux);\n  }\n\n  // Intervalo 30 segundos\n  delay(30000);\n}\n",
   "meta": {
-    "author": "José Tellez",
+    "author": "Jose Tellez / Juan Buitrago",
     "created": "2026-09-19",
-    "version": "1.0.0"
+    "version": "2.0.0",
+    "interval_s": 30,
+    "variables": ["temperature", "humidity", "lux"],
+    "mqtt_topic": "campus/ems/D2"
   }
 }
