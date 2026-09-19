@@ -1,0 +1,46 @@
+{
+  "title": "D2 - Meteo patio / cubierta - Campus UNAB",
+  "description": "ESP32 simulado en Wokwi para monitoreo de condiciones patio y cubierta",
+  "tags": ["wokwi", "esp32", "MQTT", "campus-ems", "D2"],
+  "hardware": {
+    "board": "esp32",
+    "connectivity": {
+      "wifi": {
+        "ssid": "${WOKWI_WIFI_SSID}",
+        "pass": "${WOKWI_WIFI_PASS}"
+      },
+      "mqtt": {
+        "broker": "test.mqtt.org",
+        "port": 1883,
+        "topic": "campus/ems/D2"
+      }
+    }
+  },
+  "components": [
+    {
+      "type": "sensor_dht22",
+      "id": "dht",
+      "pin": 4,
+      "variables": ["temperature", "humidity"]
+    },
+    {
+      "type": "sensor_bh1750",
+      "id": "lux",
+      "pin": 34,
+      "variables": ["lux"]
+    },
+    {
+      "type": "actuator_led",
+      "id": "led",
+      "pin": 2,
+      "variables": ["led_state"]
+    }
+  ],
+  "program": "arduino\n\
+#include <DHT.h>\\n\\n\\n#define DHTPIN 4#define DHTTYPE DHT22 \\nDHT dht(DHTPIN, DHTTYPE);\\n#include <BH1750.h>\\nBH1750 luxMeter;\\n\\nvoid setup() {\\n  Serial.begin(115200);\\n  dht.begin();\\n  luxMeter.begin();\\n  Serial.println(\"Wokwi D2 Started\");\\n}\\n\\nvoid loop() {\\n  // Lectura DHT22\\n  float h = dht.readHumidity();\\n  float t = dht.readTemperature();\\n  if (isnan(h) || isnan(t)) { Serial.println(\"Failed to read from DHT!\"); } else { \\n    Serial.print(\"Temp: \"); Serial.print(t); \\n    Serial.print(\" \"); Serial.print(\"Hum: \"); Serial.println(h); \\n  }\\n  // Lectura BH1750\\n  luxLevel = luxMeter.readLightLevel();\\n  Serial.print(\"Lux: \"); Serial.println(luxLevel);\\n  // Publicar via MQTT\\n  publishSensorData(t, h, luxLevel);\\n  delay(30000); \\n  // 30 segundos interval\\n}\\n\\nvoid publishSensorData(float temp, float hum, float lux) {\\n  char payload[128];\\n  snprintf(payload, sizeof(payload), \\\"{\\\\\"temperature\\\\\":\\\\\"%0.1f\\\\\",\\\\\"humidity\\\\\":\\\\\"%0.1f\\\\\",\\\\\"lux\\\\\":\\\\\"%0.1f\\\\\"}\\\", temp, hum, lux);\\n  // MQTT publish to campus/ems/D2\\n  // client.publish(\"campus/ems/D2\", payload);\\n  Serial.print(\"Published: \"); Serial.println(payload);\\n}\\n",
+  "meta": {
+    "author": "José Tellez",
+    "created": "2026-09-19",
+    "version": "1.0.0"
+  }
+}
