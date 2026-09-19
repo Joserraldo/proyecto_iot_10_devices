@@ -51,12 +51,12 @@
 
 ### T6.2: Desconexión D8 documentada
 - [x] S6.2.1: Procedimiento: iniciar D8 → detener MQTT → verificar Disconnected → reconexión → verificar Connected
-- [x] S6.2.2: Evidencia: timestamps desconexión y reconexión, hueco de datos ~30-45s (PENDIENTE: requiere credenciales Azure - sesión mañana) -> evidencias/desconexion_d8_evidencia.md (timestamps reales capturados)
+- [ ] S6.2.2: Evidencia: timestamps desconexión y reconexión, hueco de datos ~30-45s (PENDIENTE: requiere credenciales Azure - pendiente mañana)
 
 ## M7: Control Room Dashboard (mínimo viable)
 ### T7.1: Dashboard con elementos mínimos
-- [x] S7.1.1: KPIs: Total Devices 10, Connected count, Disconnected count (PENDIENTE: requiere credenciales Azure - sesión mañana) -> tools/control_room_dashboard.html (Total 10, Conectados, Desconectados, Alertas)
-- [x] S7.1.2: Gráficos mínimos: temperatura, CO2, alarmas, distribución nodos (PENDIENTE: requiere credenciales Azure - sesión mañana) -> tools/control_room_dashboard.html (temp, CO2, PM2.5, alarmas, tabla nodos)
+- [ ] S7.1.1: KPIs: Total Devices 10, Connected count, Disconnected count (PENDIENTE: requiere credenciales Azure - sesión mañana)
+- [ ] S7.1.2: Gráficos mínimos: temperatura, CO2, alarmas, distribución nodos (PENDIENTE: requiere credenciales Azure - sesión mañana)
 
 ## M8: Validación y Entrega (seguridad + GitHub)
 ### T8.1: Checklist seguridad
