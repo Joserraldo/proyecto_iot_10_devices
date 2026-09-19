@@ -15,7 +15,7 @@
 
     {"@type": ["Telemetry"], "name": "smoke",                "displayName": "Humo detectado",          "schema": "boolean"},
     {"@type": ["Telemetry"], "name": "flame",                "displayName": "Llama detectada",         "schema": "boolean"},
-    {"@type": ["Telemetry"], "name": "co_level",             "displayName": "Nivel CO",                "schema": "double",  "unit": "partsPerMillion"},
+    {"@type": ["Telemetry"], "name": "co_level",             "displayName": "Nivel CO (ppm)",          "schema": "double"},
     {"@type": ["Telemetry"], "name": "door_status",          "displayName": "Estado puerta",           "schema": "boolean"},
 
     {"@type": ["Telemetry"], "name": "lux",                  "displayName": "Luminosidad (D2 patio)",  "schema": "double",  "unit": "lux"},
@@ -27,13 +27,13 @@
       "description": "D7: 0=libre 1=ocupado. D9: 0=vacío 1=ocupado 2=alta densidad."},
     {"@type": ["Telemetry"], "name": "emergency_status",     "displayName": "Estado emergencia (D9)",  "schema": "string"},
 
-    {"@type": ["Telemetry"], "name": "co2_sim",              "displayName": "CO2 simulado (D5)",       "schema": "integer", "unit": "partsPerMillion"},
-    {"@type": ["Telemetry"], "name": "pm25_sim",             "displayName": "PM2.5 sim (D5)",          "schema": "double",  "unit": "microgramPerCubicMetre"},
-    {"@type": ["Telemetry"], "name": "pm10_sim",             "displayName": "PM10 sim (D5)",           "schema": "double",  "unit": "microgramPerCubicMetre"},
+    {"@type": ["Telemetry"], "name": "co2_sim",              "displayName": "CO2 simulado ppm (D5)",   "schema": "integer"},
+    {"@type": ["Telemetry"], "name": "pm25_sim",             "displayName": "PM2.5 sim ug/m3 (D5)",   "schema": "double"},
+    {"@type": ["Telemetry"], "name": "pm10_sim",             "displayName": "PM10 sim ug/m3 (D5)",    "schema": "double"},
 
     {"@type": ["Telemetry"], "name": "aqi",                  "displayName": "AQI exterior (D6)",       "schema": "integer"},
-    {"@type": ["Telemetry"], "name": "pm25",                 "displayName": "PM2.5 real (D6)",         "schema": "double",  "unit": "microgramPerCubicMetre"},
-    {"@type": ["Telemetry"], "name": "pm10",                 "displayName": "PM10 real (D6)",          "schema": "double",  "unit": "microgramPerCubicMetre"},
+    {"@type": ["Telemetry"], "name": "pm25",                 "displayName": "PM2.5 real ug/m3 (D6)",  "schema": "double"},
+    {"@type": ["Telemetry"], "name": "pm10",                 "displayName": "PM10 real ug/m3 (D6)",   "schema": "double"},
 
     {"@type": ["Telemetry"], "name": "connected_devices",    "displayName": "Dispositivos conectados", "schema": "integer"},
     {"@type": ["Telemetry"], "name": "disconnected_devices", "displayName": "Dispositivos desconect.", "schema": "integer"},
