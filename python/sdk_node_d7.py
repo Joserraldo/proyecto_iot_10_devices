@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 def generate_telemetry():
     return {
         "door_status": random.random() > 0.6,    # 40 % abierta
-        "occupancy": random.random() > 0.75,     # 25 % ocupado
+        "occupancy": 1 if random.random() > 0.75 else 0,  # 25 % ocupado — int para Device Template (D9 usa 0/1/2)
         "temperature": round(random.uniform(15.0, 35.0), 1),
         "source": "mqtt-explicito",
         "timestamp": datetime.now(timezone.utc).isoformat(),
