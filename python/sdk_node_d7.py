@@ -76,7 +76,7 @@ def on_message(client, userdata, msg):
 
 
 def connect_mqtt():
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=f"d7-{DEVICE_ID}")
+    client = mqtt.Client(client_id=f"d7-{DEVICE_ID}")
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
     client.on_message = on_message
