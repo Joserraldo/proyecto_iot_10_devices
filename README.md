@@ -111,6 +111,10 @@ El escenario cubre monitoreo meteorológico, detección de incendios, calidad de
 - **D8**: demostrar desconexión/reconexión con `--send-to-cloud --disconnect-at N` en Azure
 - **D6**: registrar token WAQI para datos reales de calidad de aire (actualmente usa fallback)
 
+### ▶️ Cómo correr la flota completa
+
+Doble clic en `run_all_devices.bat` — abre 9 ventanas CMD, una por dispositivo, y los mantiene conectados a Azure indefinidamente. Cerrar la ventana = desconectar ese dispositivo.
+
 ### ❌ No tocar todavía
 Dashboard, reglas de alerta, históricos CSV de 4 días, screenshots finales.
 
