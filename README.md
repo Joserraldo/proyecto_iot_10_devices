@@ -68,40 +68,51 @@ El escenario cubre monitoreo meteorológico, detección de incendios, calidad de
 
 ## 🔄 Cambios Juan — 2026-09-19
 
-### ✅ Lo que quedó listo
-
-**Código — Fase 1 completa**
+### ✅ Fase 1 — Código (completa)
 - Corregidos todos los bugs críticos en los 11 scripts Python y el sketch ESP32 (D2)
-- D1: SyntaxError fatal corregido — ya conecta y envía telemetría
-- D3: `main()` no hacía nada — reescrito completo para que conecte y envíe
-- D4: comandos remotos (`handle_command`) usaban API incorrecta del SDK — corregido
-- D5: reemplazada API falsa — ahora usa Open-Meteo real para temperatura/humedad/viento; CO2 y PM etiquetados como simulados
-- D6: URL de Atlas Weather no existe — reemplazada con WAQI (calidad de aire real gratuita)
-- D7: imports faltantes, broker MQTT incorrecto — corregido
-- D8: bug en `timedelta`, desconexión/reconexión verificada con timestamps reales
-- D9: `random.choices()` sin argumento obligatorio — corregía con TypeError en cada ciclo
-- D10: JSON anidado aplanado a campos escalares (IoT Central no grafica objetos anidados)
-- Bridge D2: `SyntaxError` en asignación — bridge nunca arrancaba
-- Sketch Wokwi D2: no tenía WiFi.begin ni MQTT publish — reescrito completo
+- D1: SyntaxError fatal corregido
+- D3: `main()` no hacía nada — reescrito completo
+- D4: `handle_command` usaba API incorrecta del SDK — corregido
+- D5: API falsa reemplazada con Open-Meteo real; CO2/PM etiquetados como simulados
+- D6: URL Atlas Weather no existe — reemplazada con WAQI
+- D7: imports faltantes, broker MQTT incorrecto, `CallbackAPIVersion` incompatible con paho 1.6 — corregido
+- D8: bug en `timedelta` corregido
+- D9: `random.choices()` sin argumento obligatorio — corregido
+- D10: JSON anidado aplanado a escalares para IoT Central
+- Bridge D2: `SyntaxError` en asignación — corregido
+- Sketch Wokwi D2: sin WiFi.begin ni MQTT publish — reescrito completo
 
-**Preparación Azure — Fase 2**
-- `iotcentral/device_template_campus_emergency_v1.json` — plantilla DTDL con los 34 campos reales de los 10 dispositivos, lista para importar directo en IoT Central
-- `.env.example` — reescrito con las variables reales que lee cada script (D3 tiene nombre de variable distinto, documentado)
-- `python/provision_devices.py` — script que obtiene los connection strings de Azure via DPS; solo necesita ID Scope + Master Key
+### ✅ Fase 2 — Azure IoT Central (completa)
 
-### ⏳ Lo que falta (requiere Azure)
+**Infraestructura creada:**
+- App `campus-ems` en Azure IoT Central (`campus-ems.azureiotcentral.com`)
+- Device Template `campus-emergency-v1` publicado con 34 campos de telemetría
+- 10 dispositivos registrados (`campus-ems-01` al `campus-ems-10`)
+- Provisioning via DPS completado — connection strings generados con `python/provision_devices.py`
 
-- Crear la app en **Azure IoT Central** (`campus-ems`)
-- Importar `iotcentral/device_template_campus_emergency_v1.json` como Device Template
-- Registrar los 10 dispositivos (`campus-ems-01` al `campus-ems-10`)
-- Correr `python/provision_devices.py` con el ID Scope y Master Key de la app → genera los connection strings
-- Crear `.env` con esos connection strings y probar D1 primero
-- Verificar D1 en Azure como **Connected** con telemetría llegando → luego D4 → luego el resto
-- D8: probar `--send-to-cloud --disconnect-at N` y capturar el hueco en Azure
-- D2: probar flujo completo Wokwi → MQTT → bridge → Azure
+**Telemetría verificada en Azure — 2026-09-19:**
+
+| Device | Estado | Telemetría | Intervalo |
+|---|---|---|---|
+| D1 Estación meteo campus | ✅ Conectado | ✅ temp, humidity, pressure, wind, rainfall | 15 s |
+| D2 Meteo patio Wokwi | ⏳ Pendiente | — | 30 s |
+| D3 Incendio Bloque A | ✅ Conectado | ✅ temp, smoke, flame, co_level | 60 s |
+| D4 Incendio Laboratorio | ✅ Conectado | ✅ temp, smoke, flame, co_level, door_status | 60 s |
+| D5 Calidad aire aula | ✅ Conectado | ✅ temp/hum/wind (Open-Meteo real) + co2_sim, pm25_sim, pm10_sim | 15 s |
+| D6 Calidad aire exterior | ✅ Conectado | ✅ temp, aqi, pm25, pm10 (fallback Open-Meteo) | 300 s |
+| D7 Acceso principal | ✅ Conectado | ✅ door_status, occupancy, temperature | 30 s |
+| D8 Cerramiento norte | ✅ Conectado | ✅ motion, lux_nocturno, temperature (CSV real) | 60 s |
+| D9 Evacuación pasillo | ✅ Conectado | ✅ occupancy, lux_emergency, emergency_status | 45 s |
+| D10 Puesto de mando | ✅ Conectado | ✅ connected_devices, system_health, ack_status | 20 s |
+
+### ⏳ Lo que falta
+
+- **D2**: probar flujo completo Wokwi → MQTT → bridge → Azure
+- **D8**: demostrar desconexión/reconexión con `--send-to-cloud --disconnect-at N` en Azure
+- **D6**: registrar token WAQI para datos reales de calidad de aire (actualmente usa fallback)
 
 ### ❌ No tocar todavía
-Dashboard, reglas de alerta, históricos CSV de 4 días, screenshots finales — eso va después de tener los dispositivos conectados.
+Dashboard, reglas de alerta, históricos CSV de 4 días, screenshots finales.
 
 ---
 
