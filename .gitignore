@@ -1,0 +1,38 @@
+# Python environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables (real secrets never pushed; .env.example IS pushed)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Cache
+__pycache__/
+*.pyc
+*.pyo
+.cache/
+
+# OpenCode local workspace metadata
+.opencode/
+
+# IoT Central
+iot-central-export/
+*.integrations.json
+
+# Wokwi
+wokwi-diagram.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+evidencias/*
+!evidencias/.gitkeep
