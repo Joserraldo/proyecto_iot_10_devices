@@ -1,241 +1,190 @@
 #!/usr/bin/env python3
-# API Pública Node - D6 Calidad aire exterior
-# Dispositivo: D6 - Calidad aire exterior
-# Origen: Atlas Weather - Protocolo: HTTPS - Intervalo: 5 minutos
-
 """
 D6 - Calidad aire exterior
--------------------------
-Origen: Atlas Weather
-Protocolo: HTTPS
-Intervalo: 5 minutos (300 segundos)
-Variables: pm25, pm10, aqi, temperature, humidity, wind_speed, wind_direction
+---------------------------
+Origen: WAQI (World Air Quality Index) — API pública gratuita con token.
+        Si no hay token, usa Open-Meteo como alternativa meteorológica
+        + datos de calidad de aire simulados, claramente etiquetados.
+Protocolo: HTTPS (API) + MQTT/TLS (envío a IoT Central)
+Intervalo: 300 segundos (5 minutos)
 
-Este dispositivo consume el servicio Atlas Weather (o API alternativa) para obtener
-datos de calidad del aire y condiciones meteorológicas externas. Atlas Weather proporciona
-datos más especializados que Open-Meteo para partículas y índices de calidad del aire.
-
-Patrón: Bridge API -> IoT Central (igual que D5, pero con servicio Atlas Weather en lugar
-de Open-Meteo, y intervalo diferente de 5 minutos en lugar de 15).
+NOTA: "Atlas Weather" no dispone de API pública accesible sin suscripción Azure Maps.
+      Se usa WAQI (https://waqi.info/) que es gratuito con registro en:
+        https://aqicn.org/data-platform/token/
+      Configurar: WAQI_TOKEN=tu-token-real en .env
+      Sin token, el script corre en modo fallback con datos simulados.
 """
 
 import os
-import json
 import time
+import json
+import random
 import logging
 import requests
-from azure.iot.device import IoTHubDeviceClient, Message
 from datetime import datetime, timezone
+from azure.iot.device import IoTHubDeviceClient, Message
 
-# Configuración Azure IoT Central
-IOT_CENTRAL_CONNECTION_STRING = os.getenv("IOT_CENTRAL_DPS_CONNECTION_STRING")
+# Credenciales Azure
+CONNECTION_STRING = os.getenv("IOT_CENTRAL_DPS_CONNECTION_STRING")
 DEVICE_ID = os.getenv("IOT_CENTRAL_DEVICE_ID_D6", "campus-ems-06")
-MODEL_ID = os.getenv("IOT_CENTRAL_MODEL_ID_D6", "campus-emergency-v1")
-
-# Intervalo D6: 5 minutos = 300 segundos
 SAMPLE_INTERVAL = float(os.getenv("SAMPLE_INTERVAL_D6", "300"))
 
-# Endpoint Atlas Weather (o alternativa)
-# Atlas Weather requiere suscripción, usamos variable de entorno para endpoint
-ATLAS_WEATHER_API_URL = os.getenv(
-    "ATLAS_WEATHER_API_URL",
-    "https://api.atlas.microsoft.com/weather/v2"
-)
+# WAQI — World Air Quality Index (API pública, token gratuito)
+WAQI_TOKEN = os.getenv("WAQI_TOKEN", "")            # Dejar vacío = modo fallback
+WAQI_STATION = os.getenv("WAQI_STATION", "bucaramanga")  # Nombre de ciudad
+WAQI_URL = f"https://api.waqi.info/feed/{WAQI_STATION}/"
 
-# Parámetros - variables de calidad aire y meteorología
-API_PARAMETERS = {
-    "latitude": os.getenv("LATITUDE", "19.0416"),
-    "longitude": os.getenv("LONGITUDE", "-98.6721"),
-    "parameters": "pm25,pm10,aqi,temperature,humidity,wind_speed,wind_direction,pressure",
-    "apikey": os.getenv("ATLAS_API_KEY", "demo-key"),  # Usar key real en .env
-    "acquisitionmode": "standard",
-    "datasource": "default"
-}
+# Open-Meteo (fallback meteorológico sin key)
+OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+LATITUDE = os.getenv("LATITUDE", "7.1254")
+LONGITUDE = os.getenv("LONGITUDE", "-73.1198")
 
-# Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [D6] %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
+_azure_client = None
 
-def fetch_atlas_weather_data():
-    """Obtiene datos de calidad aire desde Atlas Weather."""
+
+def get_azure_client():
+    global _azure_client
+    if _azure_client is not None:
+        return _azure_client
+    if not CONNECTION_STRING:
+        return None
     try:
-        logger.debug(f"Consultando Atlas Weather: {ATLAS_WEATHER_API_URL}")
-        response = requests.get(ATLAS_WEATHER_API_URL, 
-                              params=API_PARAMETERS, 
-                              timeout=15)
-        response.raise_for_status()
-        
-        data = response.json()
-        logger.debug(f"Respuesta Atlas Weather: {json.dumps(data, ensure_ascii=False)[:200]}...")
-        
-        # Navegar estructura de respuesta Atlas Weather
-        telemetry = {}
-        
-        # La estructura típica Atlas Weather tiene:
-        # - value o observations con los parámetros solicitados
-        # - location, timestamp, etc.
-        
-        # Intentar extraer variables comunes
-        if "value" in data:
-            val = data["value"]
-            if isinstance(val, dict):
-                # Extraer variables conocidas
-                for var in ["pm25", "pm10", "aqi", "temperature", "humidity", 
-                           "wind_speed", "wind_direction", "pressure"]:
-                    if var in val:
-                        telemetry[var] = round(val[var], 1) if isinstance(val[var], (int, float)) else val[var]
-                        
-        # Si no hay estructura 'value', intentar directo
-        if not telemetry:
-            # Estructura alternativa
-            for var in ["pm25", "pm10", "aqi", "temperature", "humidity", 
-                       "wind_speed", "wind_direction", "pressure"]:
-                if var in data:
-                    telemetry[var] = round(data[var], 1) if isinstance(data[var], (int, float)) else data[var]
-        
-        # Agregar metadatos
-        telemetry["api_source"] = "atlas-weather"
-        telemetry["api_timestamp"] = datetime.now(timezone.utc).isoformat()
-        
-        # Timestamp de los datos (si está disponible)
-        if "timestamp" in data:
-            telemetry["data_timestamp"] = data["timestamp"]
-        elif "time" in data:
-            telemetry["data_timestamp"] = data["time"]
-        else:
-            telemetry["data_timestamp"] = datetime.now(timezone.utc).isoformat()
-        
-        logger.debug(f"Datos Atlas Weather: {json.dumps(telemetry, ensure_ascii=False)}")
-        return telemetry
-        
-    except requests.exceptions.HTTPError as e:
-        status = e.response.status_code if e.response else "desconocido"
-        logger.error(f"Error HTTP Atlas Weather ({status}): {e}")
-        return simulate_fallback_data()
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error de conexión Atlas Weather: {e}")
-        return simulate_fallback_data()
+        _azure_client = IoTHubDeviceClient.create_from_connection_string(CONNECTION_STRING)
+        _azure_client.connect()
+        logger.info(f"[D6] {DEVICE_ID} conectado a IoT Central")
     except Exception as e:
-        logger.error(f"Error inesperado Atlas Weather: {e}")
-        return simulate_fallback_data()
+        logger.error(f"[D6] Error al conectar: {e}")
+        _azure_client = None
+    return _azure_client
 
 
-def simulate_fallback_data():
-    """Genera datos de fallback cuando Atlas Fallo."""
-    telemetry = {
-        "pm25": round(random.uniform(0, 50), 1),
-        "pm10": round(random.uniform(0, 100), 1),
-        "aqi": random.randint(20, 100),
-        "temperature": round(random.uniform(-5, 35), 1),
-        "humidity": round(random.uniform(20, 80), 1),
-        "wind_speed": round(random.uniform(0, 20), 1),
-        "wind_direction": round(random.uniform(0, 360), 1),
-        "pressure": round(random.uniform(995, 1015), 1),
-        "api_source": "fallback-simulated",
-        "api_timestamp": datetime.now(timezone.utc).isoformat(),
-        "data_timestamp": datetime.now(timezone.utc).isoformat(),
-        "_fallback": True
+def fetch_waqi():
+    """Obtiene calidad de aire desde WAQI. Requiere WAQI_TOKEN."""
+    if not WAQI_TOKEN:
+        logger.debug("[D6] WAQI_TOKEN no configurado — usando fallback")
+        return None
+    try:
+        resp = requests.get(WAQI_URL, params={"token": WAQI_TOKEN}, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") != "ok":
+            logger.warning(f"[D6] WAQI status={data.get('status')} — usando fallback")
+            return None
+        iaqi = data["data"].get("iaqi", {})
+        return {
+            "aqi": int(data["data"].get("aqi", 0)),
+            "pm25": round(float(iaqi.get("pm25", {}).get("v", 0)), 1),
+            "pm10": round(float(iaqi.get("pm10", {}).get("v", 0)), 1),
+            "temperature": round(float(iaqi.get("t", {}).get("v", 25.0)), 1),
+            "humidity": round(float(iaqi.get("h", {}).get("v", 60.0)), 1),
+            "wind_speed": round(float(iaqi.get("w", {}).get("v", 5.0)), 1),
+            "api_source": "waqi-real",
+        }
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"[D6] WAQI no disponible: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"[D6] Error inesperado WAQI: {e}")
+        return None
+
+
+def fetch_open_meteo_fallback():
+    """Fallback meteorológico con Open-Meteo (sin key)."""
+    params = {
+        "latitude": LATITUDE,
+        "longitude": LONGITUDE,
+        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m",
+        "timezone": "auto",
     }
-    logger.warning("Usando datos simulados por fallo Atlas Weather")
+    try:
+        resp = requests.get(OPEN_METEO_URL, params=params, timeout=10)
+        resp.raise_for_status()
+        current = resp.json().get("current", {})
+        return {
+            "temperature": round(float(current.get("temperature_2m", 25.0)), 1),
+            "humidity": round(float(current.get("relative_humidity_2m", 60.0)), 1),
+            "wind_speed": round(float(current.get("wind_speed_10m", 5.0)), 1),
+            "wind_direction": round(float(current.get("wind_direction_10m", 180.0)), 1),
+        }
+    except Exception:
+        return {
+            "temperature": round(25.0 + random.uniform(-5, 5), 1),
+            "humidity": round(random.uniform(30, 70), 1),
+            "wind_speed": round(random.uniform(0, 15), 1),
+            "wind_direction": round(random.uniform(0, 360), 1),
+        }
+
+
+def build_telemetry():
+    """Construye payload priorizando WAQI; si falla, Open-Meteo + sim AQI."""
+    waqi_data = fetch_waqi()
+    if waqi_data:
+        telemetry = waqi_data
+    else:
+        # Sin WAQI: meteorología de Open-Meteo + AQI simulado
+        meteo = fetch_open_meteo_fallback()
+        telemetry = {
+            **meteo,
+            "aqi": random.randint(20, 80),          # simulado
+            "pm25": round(random.uniform(5, 35), 1), # simulado μg/m³
+            "pm10": round(random.uniform(10, 70), 1),# simulado μg/m³
+            "wind_direction": round(random.uniform(0, 360), 1),
+            "api_source": "fallback-simulated",
+        }
+    telemetry["timestamp"] = datetime.now(timezone.utc).isoformat()
     return telemetry
 
 
-def send_telemetry_to_central(client, telemetry):
-    """Envía telemetría a Azure IoT Central."""
-    try:
-        msg = Message(json.dumps(telemetry))
-        msg.content_encoding = "utf-8"
-        msg.content_type = "application/json"
-        
-        client.send_message(msg)
-        # Log variables clave
-        pm25 = telemetry.get("pm25", "N/A")
-        aqi = telemetry.get("aqi", "N/A")
-        temp = telemetry.get("temperature", "N/A")
-        logger.info(f"D6 Atlas->Central: PM2.5={pm25}μg/m³, AQI={aqi}, temp={temp}°C")
-        return True
-    except Exception as e:
-        logger.error(f"Error enviando a IoT Central: {e}")
-        return False
-
-
-def fetch_and_send():
-    """Ciclo completo: obtener datos Atlas y enviar a Central."""
-    try:
-        # 1. Obtener datos de Atlas Weather
-        telemetry = fetch_atlas_weather_data()
-        
-        if telemetry is None:
-            logger.error("No se pudieron obtener datos Atlas - saltando envío")
-            return
-        
-        # 2. Conectar y enviar a IoT Central
-        if not IOT_CENTRAL_CONNECTION_STRING:
-            logger.error("No IOT_CENTRAL_DPS_CONNECTION_STRING configured")
-            return
-        
-        client = IoTHubDeviceClient.create_from_connection_string(IOT_CENTRAL_CONNECTION_STRING)
-        client.connect()
-        
-        success = send_telemetry_to_central(client, telemetry)
-        
-        if success:
-            logger.debug(f"Telemetría enviada: {json.dumps(telemetry, ensure_ascii=False)}")
-        
-        # 3. Desconectar
-        client.disconnect()
-        
-    except Exception as e:
-        logger.error(f"Error en ciclo fetch-and-send D6: {e}")
-
-
 def main():
-    """Punto de entrada principal."""
-    logger.info("=" * 60)
-    logger.info("Iniciando D6 - Calidad aire exterior (Atlas Weather)")
-    logger.info("=" * 60)
-    logger.info(f"Dispositivo ID: {DEVICE_ID}")
-    logger.info(f"Origen: Atlas Weather")
-    logger.info(f"Intervalo: {SAMPLE_INTERVAL} segundos (5 minutos)")
-    logger.info(f"Endpoint: {ATLAS_WEATHER_API_URL}")
-    logger.info("Variables: pm25, pm10, aqi, temperature, humidity,")
-    logger.info("          wind_speed, wind_direction, pressure")
-    logger.info("Patrón: Bridge API -> IoT Central")
-    logger.info("Notas: Requiere Atlas API Key en .env para datos reales")
-    logger.info("=" * 60)
-    
-    # Validar configuración crítica
-    if not IOT_CENTRAL_CONNECTION_STRING:
-        logger.error("Falta IOT_CENTRAL_DPS_CONNECTION_STRING - configure .env")
-    
-    # Ciclo principal - intervalo largo (5 min)
+    logger.info("[D6] Iniciando — Calidad aire exterior")
+    logger.info(f"[D6] Device ID: {DEVICE_ID} | Intervalo: {SAMPLE_INTERVAL}s (5 min)")
+    if WAQI_TOKEN:
+        logger.info(f"[D6] Modo: WAQI real — estación: {WAQI_STATION}")
+    else:
+        logger.warning("[D6] WAQI_TOKEN no configurado — modo fallback (Open-Meteo + sim AQI)")
+        logger.warning("[D6] Para datos reales: registrar en https://aqicn.org/data-platform/token/")
+
     iteration = 0
     try:
         while True:
             iteration += 1
-            
-            logger.debug(f"Iniciando ciclo {iteration} (intervalo de {SAMPLE_INTERVAL}s)")
-            
-            fetch_and_send()
-            
-            # Esperar el intervalo completo (5 minutos = 300s)
-            # Mostrar cuenta regresiva simplificada
-            for remaining in range(int(SAMPLE_INTERVAL), 0, -30):
-                if remaining <= 30:
-                    logger.debug(f"Esperando {remaining}s para próximo muestreo...")
-                time.sleep(30)
-                
+            telemetry = build_telemetry()
+
+            client = get_azure_client()
+            if client is not None:
+                try:
+                    msg = Message(json.dumps(telemetry))
+                    msg.content_encoding = "utf-8"
+                    msg.content_type = "application/json"
+                    client.send_message(msg)
+                    logger.info(
+                        f"[D6] iter={iteration} PM2.5={telemetry['pm25']}μg/m³ "
+                        f"AQI={telemetry['aqi']} src={telemetry['api_source']}"
+                    )
+                except Exception as e:
+                    logger.error(f"[D6] Error enviando iter={iteration}: {e}")
+                    global _azure_client
+                    _azure_client = None
+            else:
+                logger.info(f"[D6] (sin Azure) {json.dumps(telemetry, ensure_ascii=False)}")
+
+            time.sleep(SAMPLE_INTERVAL)
     except KeyboardInterrupt:
-        logger.info("Interrupción por teclado - desconectando D6...")
-    except Exception as e:
-        logger.error(f"Error crítico en D6: {e}")
+        logger.info("[D6] Detenido por usuario (Ctrl+C)")
     finally:
-        logger.info("D6 finalizado")
+        if _azure_client is not None:
+            try:
+                _azure_client.disconnect()
+                logger.info("[D6] Desconectado")
+            except Exception as e:
+                logger.warning(f"[D6] Error al desconectar: {e}")
 
 
 if __name__ == "__main__":

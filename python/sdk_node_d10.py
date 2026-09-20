@@ -1,28 +1,18 @@
 #!/usr/bin/env python3
-# Node SDK Connection - D10 Puesto de mando
-# Dispositivo: D10 - Digital Twin - Intervalo: 20 segundos
-
 """
 D10 - Puesto de mando
 ----------------------
-Origen: Digital Twin (simulación interna IoT Central)
-Protocolo: MQTT/TLS por DPS
-Intervalo: 20 segundos (el más corto de la flota)
-Variables: estado_agregado, confirmacion_ack, temperatura_promedio
+Origen: Python SDK (IoTHubDeviceClient via DPS)
+Protocolo: MQTT/TLS
+Intervalo: 20 segundos (el más frecuente de la flota)
+Variables (aplanadas para IoT Central):
+  connected_devices, disconnected_devices, system_health,
+  temperatura_promedio, ack_pending, ack_status, system_uptime,
+  mqtt_status, timestamp
 
-Este dispositivo representa el puesto de mando central del campus, que agrega y
-procesa datos de todos los demás dispositivos (D1-D9). Es el centro de toma de
-decisiones operativas y su intervalo de 20 segundos es el más frecuente, lo que
-demuestra la asincronía requerida en el paralelo.
-
-Características clave:
-- Agregación de datos en tiempo real de todos los dispositivos del sistema
-- Confirmación de alarmas (ACK) para eventos críticos
-- Estado general de la flota (Connected/Disconnected count)
-- Toma de decisiones basada en reglas configurables
-- Digital Twin nativo de IoT Central (capacidades avanzadas de la plataforma)
-- El dispositivo con el intervalo más corto, complementando los intervalos más largos
-  (D6 de 5min, D4 de 1min) para demostrar 3+ intervalos distintos
+NOTA: El JSON anidado original (estado_agregado, confirmacion_ack)
+      fue aplanado porque IoT Central procesa telemetría plana.
+      Los campos compuestos requieren Components en el Device Template (Fase 2).
 """
 
 import os
@@ -31,154 +21,104 @@ import json
 import random
 import logging
 from datetime import datetime, timezone
+from azure.iot.device import IoTHubDeviceClient, Message
 
-# Configuración - variables de entorno (NUNCA hardcodeadas)
-IOT_CENTRAL_CONNECTION_STRING = os.getenv("IOT_CENTRAL_DPS_CONNECTION_STRING")
+CONNECTION_STRING = os.getenv("IOT_CENTRAL_DPS_CONNECTION_STRING")
 DEVICE_ID = os.getenv("IOT_CENTRAL_DEVICE_ID_D10", "campus-ems-10")
-MODEL_ID = os.getenv("IOT_CENTRAL_MODEL_ID_D10", "campus-emergency-v1")
-
-# Intervalo D10: 20 segundos (el más corto)
 SAMPLE_INTERVAL = float(os.getenv("SAMPLE_INTERVAL_D10", "20"))
 
-# Agregación de datos - pesos para simular lecturas de dispositivos distintos
-DEVICE_WEIGHTS = {
-    "D1": 0.15,  # Estación meteo - 15% peso
-    "D2": 0.10,  # Meteo patio - 10% peso
-    "D3": 0.12,  # Incendio Bloque A - 12% peso
-    "D4": 0.10,  # Incendio Laboratorio - 10% peso
-    "D5": 0.10,  # Calidad aire aula - 10% peso
-    "D6": 0.08,  # Calidad aire exterior - 8% peso
-    "D7": 0.08,  # Acceso principal - 8% peso
-    "D8": 0.07,  # Cerramiento norte - 7% peso
-    "D9": 0.10,  # Evacuación pasillo - 10% peso
-}
-
-# Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [D10] %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
 
-def generate_aggregated_telemetry():
-    """Genera telemetría agregada para el puesto de mando."""
-    telemetry = {
-        # Estado general de la flota
-        "estado_agregado": {
-            "total_devices": 10,
-            "connected_devices": random.randint(8, 10),
-            "disconnected_devices": 10 - random.randint(8, 10),
-            "last_boot": datetime.now(timezone.utc).isoformat(),
-            "system_health": round(random.uniform(85.0, 100.0), 1)
-        },
-        
-        # Temperatura promedio ponderada de todos los dispositivos
-        "temperatura_promedio": round(
-            random.uniform(18.0, 28.0) + 
-            random.uniform(-2.0, 2.0)  # pequeña variación
-        , 1),
-        
-        # Confirmación de alarmas ACK pendientes
-        "confirmacion_ack": random.choice([
-            {"pending": 0, "total": 5, "status": "all_clear"},
-            {"pending": 1, "total": 5, "status": "active_alert"},
-            {"pending": 2, "total": 5, "status": "minor_issues"}
-        ]),
-        
+def generate_telemetry():
+    connected = random.randint(8, 10)
+    disconnected = 10 - connected
+    ack_options = [
+        (0, "all_clear"),
+        (1, "active_alert"),
+        (2, "minor_issues"),
+    ]
+    ack_pending, ack_status = random.choice(ack_options)
+    return {
+        # Estado de flota — aplanado
+        "connected_devices": connected,
+        "disconnected_devices": disconnected,
+        "system_health": round(random.uniform(85.0, 100.0), 1),
+        # Temperatura promedio ponderada
+        "temperatura_promedio": round(random.uniform(18.0, 28.0), 1),
+        # ACK de alarmas — aplanado
+        "ack_pending": ack_pending,
+        "ack_status": ack_status,
         # Métricas de sistema
         "system_uptime": round(random.uniform(95.0, 100.0), 1),
-        "mqtt_connection_status": random.choice(["connected", "connected", "connected", "reconnecting"]),
-        
-        # Marca de tiempo
+        "mqtt_status": random.choices(
+            ["connected", "reconnecting"], weights=[0.95, 0.05], k=1
+        )[0],
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "device_role": "command_center",
-        "active_zones": random.sample(["campus", "laboratorio", "bloque_a", "patio", "perimetro"], 
-                                     k=random.randint(3, 5))
     }
-    
-    return telemetry
 
 
 def connect_client():
-    """Conecta cliente IoT Hub para D10."""
-    if not IOT_CENTRAL_CONNECTION_STRING:
-        logger.error("No IOT_CENTRAL_CONNECTION_STRING environment variable set")
+    if not CONNECTION_STRING:
+        logger.error("[D10] IOT_CENTRAL_DPS_CONNECTION_STRING no configurada")
         return None
-    
     try:
-        client = IoTHubDeviceClient.create_from_connection_string(IOT_CENTRAL_CONNECTION_STRING)
+        client = IoTHubDeviceClient.create_from_connection_string(CONNECTION_STRING)
         client.connect()
-        logger.info(f"D10 {DEVICE_ID} conectado a Azure IoT Central")
+        logger.info(f"[D10] {DEVICE_ID} conectado a IoT Central")
         return client
     except Exception as e:
-        logger.error(f"Error conectando cliente D10: {e}")
+        logger.error(f"[D10] Error al conectar: {e}")
         return None
 
 
 def send_periodic_telemetry(client):
-    """Envía telemetría agregada cada 20 segundos."""
+    iteration = 0
     try:
-        iteration = 0
         while True:
+            iteration += 1
             try:
-                iteration += 1
-                telemetry = generate_aggregated_telemetry()
-                
+                telemetry = generate_telemetry()
                 msg = Message(json.dumps(telemetry))
                 msg.content_encoding = "utf-8"
                 msg.content_type = "application/json"
-                
                 client.send_message(msg)
-                
-                # Logging cada 5 iteraciones (100 segundos)
-                if iteration % 5 == 1:
-                    connected = telemetry["estado_agregado"]["connected_devices"]
-                    ack_status = telemetry["confirmacion_ack"]["status"]
-                    avg_temp = telemetry["temperatura_promedio"]
+                if iteration == 1 or iteration % 10 == 0:
                     logger.info(
-                        f"Iteración {iteration}: flota conectadas={connected}/10, "
-                        f"ACK status={ack_status}, temp_prom={avg_temp}°C"
+                        f"[D10] iter={iteration} "
+                        f"connected={telemetry['connected_devices']}/10 "
+                        f"ack={telemetry['ack_status']} "
+                        f"temp_prom={telemetry['temperatura_promedio']}°C"
                     )
                 else:
-                    logger.debug(f"Telemetría agregada enviada: estado flock summary")
-                
-                time.sleep(SAMPLE_INTERVAL)
-                
-            except KeyboardInterrupt:
-                logger.info("Interrupción por teclado - desconectando D10...")
-                break
+                    logger.debug(f"[D10] iter={iteration} telemetría enviada")
             except Exception as e:
-                logger.error(f"Error en loop principal D10: {e}")
+                logger.error(f"[D10] Error enviando iter={iteration}: {e}")
                 time.sleep(5)
-        
-        finally:
-            try:
-                client.disconnect()
-                logger.info("D10 desconectado de Azure IoT Central")
-            except:
-                pass
+                continue
+            time.sleep(SAMPLE_INTERVAL)
+    except KeyboardInterrupt:
+        logger.info("[D10] Detenido por usuario (Ctrl+C)")
+    finally:
+        try:
+            client.disconnect()
+            logger.info("[D10] Desconectado")
+        except Exception as e:
+            logger.warning(f"[D10] Error al desconectar: {e}")
 
 
 def main():
-    """Punto de entrada principal."""
-    logger.info("=" * 60)
-    logger.info("Iniciando D10 - Puesto de mando")
-    logger.info("=" * 60)
-    logger.info(f"Dispositivo ID: {DEVICE_ID}")
-    logger.info("Origen: Digital Twin (IoT Central nativo)")
-    logger.info("Intervalo: 20 segundos (el más corto de la flota)")
-    logger.info("Funcionalidad: Agregación de datos, ACK de alarmas, toma decisiones")
-    logger.info("Demuestra: 3+ intervalos distintos (20s vs 1min vs 5min)")
-    logger.info("=" * 60)
-    
+    logger.info("[D10] Iniciando — Puesto de mando")
+    logger.info(f"[D10] Device ID: {DEVICE_ID} | Intervalo: {SAMPLE_INTERVAL}s (el más frecuente)")
     client = connect_client()
     if client is None:
-        logger.error("No se pudo establecer conexión - saliendo")
+        logger.error("[D10] No se pudo conectar — saliendo")
         return
-    
-    logger.info(f"Iniciando envío de telemetría agregada cada {SAMPLE_INTERVAL}s")
     send_periodic_telemetry(client)
 
 

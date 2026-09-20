@@ -19,9 +19,6 @@ __pycache__/
 *.pyo
 .cache/
 
-# OpenCode local workspace metadata
-.opencode/
-
 # IoT Central
 iot-central-export/
 *.integrations.json

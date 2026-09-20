@@ -1,0 +1,52 @@
+{
+  "@id": "dtmi:campusems:campusEmergencyV1;1",
+  "@type": "Interface",
+  "@context": "dtmi:dtdl:context;2",
+  "displayName": "campus-emergency-v1",
+  "description": "Plantilla unificada para la flota de 10 dispositivos IoT del campus UNAB. Cada dispositivo envía solo su subconjunto de campos; los demás aparecen sin datos.",
+  "contents": [
+
+    {"@type": ["Telemetry"], "name": "temperature",          "displayName": "Temperatura",             "schema": "double",  "unit": "degreeCelsius"},
+    {"@type": ["Telemetry"], "name": "humidity",             "displayName": "Humedad",                 "schema": "double",  "unit": "percent"},
+    {"@type": ["Telemetry"], "name": "pressure",             "displayName": "Presión atmosférica",     "schema": "double",  "unit": "millibar"},
+    {"@type": ["Telemetry"], "name": "wind_speed",           "displayName": "Velocidad del viento",    "schema": "double",  "unit": "metrePerSecond"},
+    {"@type": ["Telemetry"], "name": "wind_direction",       "displayName": "Dirección del viento",    "schema": "double",  "unit": "degreeOfArc"},
+    {"@type": ["Telemetry"], "name": "rainfall",             "displayName": "Precipitación",           "schema": "double",  "unit": "millimetre"},
+
+    {"@type": ["Telemetry"], "name": "smoke",                "displayName": "Humo detectado",          "schema": "boolean"},
+    {"@type": ["Telemetry"], "name": "flame",                "displayName": "Llama detectada",         "schema": "boolean"},
+    {"@type": ["Telemetry"], "name": "co_level",             "displayName": "Nivel CO (ppm)",          "schema": "double"},
+    {"@type": ["Telemetry"], "name": "door_status",          "displayName": "Estado puerta",           "schema": "boolean"},
+
+    {"@type": ["Telemetry"], "name": "lux",                  "displayName": "Luminosidad (D2 patio)",  "schema": "double",  "unit": "lux"},
+    {"@type": ["Telemetry"], "name": "lux_nocturno",         "displayName": "Lux nocturno (D8)",       "schema": "double",  "unit": "lux"},
+    {"@type": ["Telemetry"], "name": "lux_emergency",        "displayName": "Lux emergencia (D9)",     "schema": "double",  "unit": "lux"},
+
+    {"@type": ["Telemetry"], "name": "motion",               "displayName": "Movimiento (D8)",         "schema": "boolean"},
+    {"@type": ["Telemetry"], "name": "occupancy",            "displayName": "Ocupación",               "schema": "integer",
+      "description": "D7: 0=libre 1=ocupado. D9: 0=vacío 1=ocupado 2=alta densidad."},
+    {"@type": ["Telemetry"], "name": "emergency_status",     "displayName": "Estado emergencia (D9)",  "schema": "string"},
+
+    {"@type": ["Telemetry"], "name": "co2_sim",              "displayName": "CO2 simulado ppm (D5)",   "schema": "integer"},
+    {"@type": ["Telemetry"], "name": "pm25_sim",             "displayName": "PM2.5 sim ug/m3 (D5)",   "schema": "double"},
+    {"@type": ["Telemetry"], "name": "pm10_sim",             "displayName": "PM10 sim ug/m3 (D5)",    "schema": "double"},
+
+    {"@type": ["Telemetry"], "name": "aqi",                  "displayName": "AQI exterior (D6)",       "schema": "integer"},
+    {"@type": ["Telemetry"], "name": "pm25",                 "displayName": "PM2.5 real ug/m3 (D6)",  "schema": "double"},
+    {"@type": ["Telemetry"], "name": "pm10",                 "displayName": "PM10 real ug/m3 (D6)",   "schema": "double"},
+
+    {"@type": ["Telemetry"], "name": "connected_devices",    "displayName": "Dispositivos conectados", "schema": "integer"},
+    {"@type": ["Telemetry"], "name": "disconnected_devices", "displayName": "Dispositivos desconect.", "schema": "integer"},
+    {"@type": ["Telemetry"], "name": "system_health",        "displayName": "Salud del sistema",       "schema": "double",  "unit": "percent"},
+    {"@type": ["Telemetry"], "name": "temperatura_promedio", "displayName": "Temperatura promedio",    "schema": "double",  "unit": "degreeCelsius"},
+    {"@type": ["Telemetry"], "name": "ack_pending",          "displayName": "ACK pendientes",          "schema": "integer"},
+    {"@type": ["Telemetry"], "name": "ack_status",           "displayName": "Estado ACK",              "schema": "string"},
+    {"@type": ["Telemetry"], "name": "system_uptime",        "displayName": "Uptime sistema",          "schema": "double",  "unit": "percent"},
+    {"@type": ["Telemetry"], "name": "mqtt_status",          "displayName": "Estado MQTT",             "schema": "string"},
+
+    {"@type": ["Telemetry"], "name": "api_source",           "displayName": "Fuente de datos",         "schema": "string"},
+    {"@type": ["Telemetry"], "name": "source",               "displayName": "Origen del mensaje",      "schema": "string"},
+    {"@type": ["Telemetry"], "name": "csv_row",              "displayName": "Fila CSV (D8)",           "schema": "integer"},
+    {"@type": ["Telemetry"], "name": "timestamp",            "displayName": "Timestamp dispositivo",   "schema": "string"}
+  ]
+}
