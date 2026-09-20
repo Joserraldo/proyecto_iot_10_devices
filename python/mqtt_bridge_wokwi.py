@@ -117,7 +117,11 @@ def on_disconnect(client, userdata, rc):
 
 
 def start_bridge():
-    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=f"bridge-{DEVICE_ID}")
+    # Compatibilidad paho-mqtt 1.x y 2.x
+    try:
+        mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1, client_id=f"bridge-{DEVICE_ID}")
+    except AttributeError:  # paho 1.x no tiene CallbackAPIVersion
+        mqtt_client = mqtt.Client(client_id=f"bridge-{DEVICE_ID}")
     mqtt_client.on_connect = on_connect
     mqtt_client.on_disconnect = on_disconnect
     mqtt_client.on_message = on_message
