@@ -2,11 +2,11 @@
 
 ## Estado del proyecto
 
-- **Estado general:** Planeacion inicial
+- **Estado general:** Despliegue en VM completado (9/10 nodos corriendo en app de José)
 - **Escenario elegido:** 3.4 - Campus Colegio Caldas / Universidad UNAB (Gestión de Emergencias) - Seleccionado en 2026-09-19
 - **Plataforma:** Azure IoT Central
 - **Referencias:** `D:\José Tellez\Documents\universidad\sexto semestre\Iot_learning`
-- **Ultima actualizacion:** 2026-09-18
+- **Ultima actualizacion:** 2026-09-20
 
 ## Reglas de colaboracion
 
@@ -113,6 +113,8 @@
 | Fecha | Tarea | Evidencia | Ubicacion | Responsable |
 |---|---|---|---|---|
 | 2026-09-18 | Planning inicial | Prompt maestro y checklist creados | `Guia_tecnica_parcial.md`, `TODO.md` | José Tellez |
+| 2026-09-20 | Despliegue VM Azure (app de José) | 10/10 devices provisionados, 9 nodos corriendo, template creado vía API | `evidencias/despliegue_vm_jose_evidencia.md` | José Tellez |
+| 2026-09-20 | Guía evidencias portal | Screenshots + flujo D2 Wokwi documentados | `evidencias/guia_screenshots_portal.md` | José Tellez |
 
 ## Registro de bloqueos y decisiones
 
@@ -126,6 +128,7 @@
 - [ ] `TODO.md` actualizado.
 - [ ] `.env.example` incluido y `.env` excluido.
 - [ ] No hay connection strings, claves, SAS tokens ni contrasenas.
+  - ⚠️ PENDIENTE CRITICO: `run_all_devices.bat` tiene los connection strings de la app de Buitrago hardcodeados (commit 4d0024c). Removerlos antes de publicar en GitHub.
 - [ ] Dependencias documentadas.
 - [ ] Instrucciones de ejecucion local y en VM verificadas.
 - [ ] Evidencias organizadas sin secretos.

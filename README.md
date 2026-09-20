@@ -107,13 +107,53 @@ El escenario cubre monitoreo meteorológico, detección de incendios, calidad de
 
 ### ⏳ Lo que falta
 
-- **D2**: probar flujo completo Wokwi → MQTT → bridge → Azure
-- **D8**: demostrar desconexión/reconexión con `--send-to-cloud --disconnect-at N` en Azure
+- **D2**: ejecutar el sketch Wokwi en el navegador para cerrar el flujo ESP32 → MQTT → bridge → Azure (bridge ya corriendo en la VM)
+- **D8**: demostrar desconexión/reconexión con `--disconnect-at N` **en la app nueva** (la evidencia actual es de la app de Buitrago)
 - **D6**: registrar token WAQI para datos reales de calidad de aire (actualmente usa fallback)
 
 ### ▶️ Cómo correr la flota completa
 
 Doble clic en `run_all_devices.bat` — abre 9 ventanas CMD, una por dispositivo, y los mantiene conectados a Azure indefinidamente. Cerrar la ventana = desconectar ese dispositivo.
+
+> ⚠️ **Nota:** ese `.bat` usa los connection strings de la app `campus-ems` de Buitrago
+> (`iotc-ae3518fb-...azure-devices.net`). Para la app nueva de José usar la VM (ver abajo).
+
+---
+
+## 🚀 Despliegue en VM de Azure (app de José) — 2026-09-20
+
+**App IoT Central nueva** (sustituye a campus-ems para este despliegue):
+
+| Dato | Valor |
+|---|---|
+| ID Scope | `0ne012B4879` |
+| IoT Hub | `iotc-371f401d-4819-4938-ad41-996a5a907560.azure-devices.net` |
+| Device Template | `campus-emergency-v1` (`dtmi:campusems:campusEmergencyV1;1`), 35 campos |
+| Devices | `campus-ems-01` … `campus-ems-10` — todos **Provisioned** |
+
+**Infraestructura creada vía REST API** (tokens SAS admin/builder, api-version 2022-07-31):
+- Device Template creado con `PUT /deviceTemplates/…` (formato `@type: ["ModelDefinition","DeviceModel"]`)
+- 10 devices creados + asociados al template + credenciales por `GET /devices/{id}/credentials`
+- Connection strings generados por DPS (symmetric key por device)
+
+**VM de Azure** (`vm-parcial-jose-juancho`, 57.156.66.112, Ubuntu 24.04):
+- Repo en `~/proyecto_iot_10_devices`, venv con dependencias
+- `run_all_devices.sh` lanza los 9 nodos Python en background (logs en `~/iotlogs/`)
+- **9/10 dispositivos corriendo** y enviando telemetría: D1, D3–D10
+- Bridge D2 (`mqtt_bridge_wokwi.py`) corriendo, suscrito a `campus/ems/D2` en test.mosquitto.org
+  esperando al ESP32 de Wokwi (ejecutar en navegador local — ver guía)
+
+**Verificación (logs reales 2026-09-20 04:17–04:18 UTC):** los 9 procesos envían
+`Successfully sent message to Hub` de forma continua. Ver
+`evidencias/despliegue_vm_jose_evidencia.md` y `evidencias/guia_screenshots_portal.md`.
+
+### ▶️ Comandos en la VM
+
+```bash
+bash ~/proyecto_iot_10_devices/status.sh            # estado + últimos logs
+bash ~/proyecto_iot_10_devices/run_all_devices.sh   # lanzar flota
+pkill -f 'sdk_node|api_node'                        # detener flota
+```
 
 ### ❌ No tocar todavía
 Dashboard, reglas de alerta, históricos CSV de 4 días, screenshots finales.
