@@ -160,6 +160,25 @@ Dashboard, reglas de alerta, históricos CSV de 4 días, screenshots finales.
 
 ---
 
+## 🧾 Logs de Wokwi en local
+
+Para ejecutar el ESP32 D2 y conservar todo el Monitor Serial en un archivo,
+ejecuta desde la raiz del proyecto:
+
+```bat
+run_wokwi_logs.bat
+```
+
+La salida se muestra en vivo y se guarda en `logs/wokwi-d2-YYYYMMDD-HHMMSS.log`.
+Incluye arranque, WiFi, MQTT, lecturas de sensores, publicaciones y
+reconexiones. Requiere Wokwi CLI instalado y disponible en `PATH`.
+
+En Git Bash puedes verlo directamente en la terminal con:
+
+```bash
+bash run_wokwi_logs.sh
+```
+
 ## ⚠️ Consideraciones de Seguridad
 
 - **NUNCA** almacenar credenciales, connection strings ni secretos en el repositorio

@@ -64,7 +64,7 @@ ADVISOR_PHONE = os.getenv("ADVISOR_PHONE") or _env.get("ADVISOR_PHONE", "+573000
 LOG_DIR = os.getenv("LOG_DIR") or os.path.expanduser("~/iotlogs")
 HISTORY_DIR = os.getenv("HISTORY_DIR") or os.path.join(LOG_DIR, "history")
 PORT = int(os.getenv("DASH_PORT", "8080"))
-REALERT_S = int(os.getenv("REALERT_S", "21600"))          # re-notificar si sigue extremo (6 h)
+REALERT_S = int(os.getenv("REALERT_S", "86400"))          # re-notificar si sigue extremo (24 h)
 MIN_EXTREME_S = int(os.getenv("MIN_EXTREME_S", "300"))    # extremo sostenido antes de alertar (5 min)
 ACTIVE_WINDOW = int(os.getenv("ACTIVE_WINDOW", "300"))    # sin requests → pausar scan/alertas (5 min)
 HIST_MAX = int(os.getenv("HIST_MAX", "30000"))            # máx puntos por device (aplanado)
@@ -237,6 +237,25 @@ def read_latest(dev_id):
     return None
 
 
+def _tail_log(dev_id, n=80):
+    """Últimas n líneas del log en vivo del dispositivo (incluye Wokwi/bridge)."""
+    path = _dev_log(dev_id)
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return []
+    chunk = min(size, 16384)
+    out = []
+    with open(path, "rb") as f:
+        f.seek(max(0, size - chunk))
+        data = f.read().decode("utf-8", "replace")
+    for line in data.splitlines():
+        line = line.strip()
+        if line:
+            out.append(line)
+    return out[-n:]
+
+
 def device_points(dev_id, limit=None, after=None):
     pts = _buf.get(dev_id, [])
     if after is not None:
@@ -403,6 +422,7 @@ def dispatch_advisor(dev_id=None):
 # ---------------------------------------------------------------- estado
 _last_scan = {"ts": 0}
 _status = {}
+_summary = {}   # resumen global de la flota (counts, KPIs, alertas)
 _activity = {"ts": 0.0}   # última vez que alguien pidió datos al dashboard
 
 def _touch_activity():
@@ -426,7 +446,33 @@ def build_status():
         }
         if values:
             check_and_alert(dev, values, now)
+    _summary.update(_build_summary(now))
     _last_scan["ts"] = now
+
+
+def _build_summary(now):
+    online = sum(1 for d in DEVICES if _status.get(d["id"], {}).get("online"))
+    offline = len(DEVICES) - online
+    alerts = [
+        {
+            "id": d["id"], "name": d["name"], "loc": d["loc"],
+            "extremes": _status[d["id"]].get("extremes", []),
+        }
+        for d in DEVICES if _status.get(d["id"], {}).get("extremes")
+    ]
+    nums = {}
+    for d in DEVICES:
+        v = _status.get(d["id"], {}).get("values", {})
+        for k, x in v.items():
+            if k in EXTREMES and isinstance(x, (int, float)) and not isinstance(x, bool):
+                nums.setdefault(k, []).append(float(x))
+    kpi = {}
+    for k, xs in nums.items():
+        kpi[k] = {"last": xs[-1], "min": min(xs), "max": max(xs), "avg": sum(xs) / len(xs)}
+    return {
+        "total": len(DEVICES), "online": online, "offline": offline,
+        "alerts": alerts, "kpis": kpi, "ts": now,
+    }
 
 
 def scan_once():
@@ -513,6 +559,29 @@ PAGE = """<!doctype html>
   .badge{display:flex;align-items:center;gap:6px;color:var(--warn);font-size:11px;margin-top:10px}
   footer{color:var(--faint);font-size:11px;padding:12px 22px 30px}
   input[type=range]{accent-color:var(--acc)}
+  .control{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;padding:0 22px 6px}
+  .panel2{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .panel2 h2{margin:0 0 12px;font-size:12px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+  .counts{display:flex;gap:10px;flex-wrap:wrap}
+  .count{flex:1;min-width:120px;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .count .c{font-size:11px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
+  .count .n{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+  .count.on .n{color:var(--ok)}.count.off .n{color:var(--off)}.count.un .n{color:var(--muted)}
+  .globalkpi{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  .gk{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .gk .k{font-size:10px;color:var(--faint);letter-spacing:.1em;text-transform:uppercase}
+  .gk .v{font-size:20px;font-weight:700;margin:5px 0 2px;font-variant-numeric:tabular-nums}
+  .gk .s{font-size:10px;color:var(--muted)}
+  .charts-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+  .chartbox2{position:relative;height:200px}
+  .alertslist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .alertslist li{display:flex;align-items:center;gap:10px;background:var(--warnbg);border:1px solid var(--warn);border-radius:10px;padding:10px 12px;font-size:12px}
+  .alertslist .none{color:var(--muted)}
+  .zones{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+  .zone{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:11px}
+  .zone b{display:block;font-size:12px;margin-bottom:3px}
+  .zone .st{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+  .zone .st.on{background:var(--ok)}.zone .st.off{background:var(--off)}.zone .st.warn{background:var(--warn)}
 </style></head>
 <body>
 <header>
@@ -534,6 +603,38 @@ PAGE = """<!doctype html>
   </button>
   <div id="clock">—</div>
 </header>
+<section class="control">
+  <div class="panel2">
+    <h2>Estado de la flota</h2>
+    <div class="counts">
+      <div class="count on"><div class="c">Conectados</div><div class="n" id="cOn">—</div></div>
+      <div class="count off"><div class="c">Desconectados</div><div class="n" id="cOff">—</div></div>
+      <div class="count un"><div class="c">Total</div><div class="n" id="cTot">—</div></div>
+    </div>
+  </div>
+  <div class="panel2">
+    <h2>Alertas activas</h2>
+    <ul class="alertslist" id="alerts"><li class="none">Sin alertas</li></ul>
+  </div>
+</section>
+<section class="control">
+  <div class="panel2" style="grid-column:1/-1">
+    <h2>KPIs de la flota · último / mín / máx</h2>
+    <div class="globalkpi" id="globalkpi"></div>
+  </div>
+</section>
+<section class="control">
+  <div class="panel2" style="grid-column:1/-1">
+    <h2>Telemetría global · últimas 24h</h2>
+    <div class="charts-row" id="gcharts"></div>
+  </div>
+</section>
+<section class="control">
+  <div class="panel2">
+    <h2>Mapa de zonas</h2>
+    <div class="zones" id="zones"></div>
+  </div>
+</section>
 <main id="grid"></main>
 <footer id="foot">Cargando…</footer>
 <script>
@@ -573,6 +674,10 @@ async function load(){
     const devs=j.devices;
     const online=devs.filter(d=>d.online).length;
     sum.textContent=online+' de '+devs.length+' en línea';
+    renderSummary(j.summary);
+    renderKPI(j.summary);
+    renderZones(devs);
+    renderCharts();
     e.innerHTML=devs.map((d,ix)=>{
       const warn=d.extremes&&d.extremes.length;
       const mf=mainField(d);
@@ -640,7 +745,67 @@ function whenVisible(fn,ms){
   const iv=setInterval(()=>{if(!document.hidden)fn();},ms);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)fn();});
 }
-whenVisible(load,15000);setInterval(tick,1000);
+const GLOBAL_FIELDS=[
+  {f:'temperature',dev:'01',c:'#58a6ff',loc:'Estación meteo campus'},
+  {f:'humidity',dev:'01',c:'#3fb950',loc:'Estación meteo campus'},
+  {f:'pm25',dev:'05',c:'#d29922',loc:'Calidad aire aula'},
+  {f:'co2_sim',dev:'05',c:'#f85149',loc:'Calidad aire aula'},
+];
+function renderSummary(s){
+  if(!s)return;
+  const o=document.getElementById('cOn'),f=document.getElementById('cOff'),t=document.getElementById('cTot');
+  if(o)o.textContent=s.online;if(f)f.textContent=s.offline;if(t)t.textContent=s.total;
+  const el=document.getElementById('alerts');
+  if(el){
+    if(s.alerts&&s.alerts.length){
+      el.innerHTML=s.alerts.map(a=>'<li><b>'+esc(a.id)+'</b> '+esc(a.name)+' — '+a.extremes.map(k=>esc(LABELS[k]||k)).join(', ')+'</li>').join('');
+    }else{el.innerHTML='<li class="none">Sin alertas activas</li>';}
+  }
+}
+function renderKPI(s){
+  const el=document.getElementById('globalkpi');if(!el||!s||!s.kpis)return;
+  const order=['temperature','humidity','pm25','co2_sim','aqi','co_level','pressure','sound_level','lux','wind_speed'];
+  order.forEach(k=>{
+    const d=s.kpis[k];if(!d)return;
+    let card=el.querySelector('[data-k="'+k+'"]');
+    if(!card){card=document.createElement('div');card.className='gk';card.dataset.k=k;el.appendChild(card);}
+    const u=UNITS[k]||'';
+    card.innerHTML='<div class="k">'+esc(LABELS[k])+'</div><div class="v">'+d.last.toFixed(1)+' <span style="font-size:11px;color:var(--muted)">'+u+'</span></div><div class="s">min '+d.min.toFixed(1)+' · máx '+d.max.toFixed(1)+' · prom '+d.avg.toFixed(1)+'</div>';
+  });
+}
+function renderZones(devs){
+  const el=document.getElementById('zones');if(!el)return;
+  el.innerHTML=(devs||[]).map(d=>{
+    const st=d.online?'on':(d.extremes&&d.extremes.length?'warn':'off');
+    return '<div class="zone"><b>'+esc(d.id)+' · '+esc(d.name)+'</b><div><span class="st '+st+'"></span>'+esc(d.loc)+' · '+(d.online?'CONECTADO':'OFFLINE')+(d.extremes&&d.extremes.length?' · ALERTA':'')+'</div></div>';
+  }).join('');
+}
+let _gchartsBuilt=false;
+async function renderCharts(){
+  const box=document.getElementById('gcharts');if(!box)return;
+  if(!_gchartsBuilt){
+    box.innerHTML=GLOBAL_FIELDS.map(g=>{
+      const cv='gc_'+g.f.replace(/[^a-z0-9]/gi,'_');
+      return '<div><div class="chartbox2"><canvas id="'+cv+'"></canvas></div><div style="font-size:11px;color:var(--muted);margin-top:6px">'+esc(LABELS[g.f]||g.f)+' · '+esc(g.loc)+'</div></div>';
+    }).join('');
+    _gchartsBuilt=true;
+  }
+  GLOBAL_FIELDS.forEach(g=>drawGlobalChart(g));
+}
+const gchCache={};
+async function drawGlobalChart(g){
+  const cv='gc_'+g.f.replace(/[^a-z0-9]/gi,'_');
+  const canvas=document.getElementById(cv);if(!canvas)return;
+  const now=Date.now(),ci=gchCache[g.f];
+  if(ci&&now-(ci.at||0)<60000){spark(canvas,ci.s,ci.c);return;}
+  try{
+    const h=await (await fetch('/api/history?id='+g.dev+'&limit=480')).json();
+    const pts=h.points.map(p=>p.v[g.f]).filter(v=>typeof v==='number');
+    gchCache[g.f]={s:pts,c:g.c,at:now};
+    spark(canvas,pts,g.c);
+  }catch(_){}
+}
+whenVisible(load,30000);setInterval(tick,1000);
 </script></body></html>"""
 
 
@@ -719,6 +884,8 @@ DETAIL_PAGE = """<!doctype html>
   .scroll{max-height:420px;overflow:auto}
   .foot{margin-top:26px;color:var(--faint);font-size:11px;text-align:center}
   .loadmore{display:inline-flex;align-items:center;gap:8px;margin-top:12px}
+  .logs{background:#0b0f14;border:1px solid var(--line);border-radius:10px;padding:12px;max-height:280px;overflow:auto;
+        font:11px/1.5 ui-monospace,Consolas,Menlo,monospace;color:#b8d0e8;margin:0;white-space:pre-wrap;word-break:break-all}
 </style></head>
 <body>
 <div id="toast" role="status" aria-live="polite"></div>
@@ -773,7 +940,11 @@ DETAIL_PAGE = """<!doctype html>
     </div>
     <button class="btn btn-ghost loadmore" id="more" type="button">Cargar todo el histórico</button>
   </div>
-  <div class="foot">Campus EMS · datos vía Azure IoT Central · actualización cada 15s</div>
+  <div class="panel">
+    <h2>Logs del dispositivo · en vivo</h2>
+    <pre class="logs" id="logs">Cargando…</pre>
+  </div>
+  <div class="foot">Campus EMS · datos vía Azure IoT Central · actualización cada 30s</div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
@@ -922,12 +1093,21 @@ function whenVisible(fn,ms){
   const iv=setInterval(()=>{if(!document.hidden)fn();},ms);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)fn();});
 }
+async function loadLogs(){
+  const el=$('logs');if(!el)return;
+  try{
+    const r=await fetch('/api/logs?id='+ID+'&n=80');const j=await r.json();
+    el.textContent=(j.logs||[]).join('\n')||'Sin logs';
+  }catch(_){}
+}
 (async()=>{
   await Promise.all([loadAll(),fetch('/api/status').then(r=>r.json()).then(j=>{window._st=j;updatePill();}).catch(()=>{})]);
+  loadLogs();
   whenVisible(async()=>{
     try{const r=await fetch('/api/status');window._st=await r.json();updatePill();}catch(_){}
+    loadLogs();
     cl.textContent=new Date().toLocaleTimeString('es-CO',{hour12:false});
-  },15000);
+  },30000);
   setInterval(()=>{cl.textContent=new Date().toLocaleTimeString('es-CO',{hour12:false});},1000);
 })();
 const cl=$('clock');
@@ -1238,7 +1418,8 @@ class H(http.server.BaseHTTPRequestHandler):
         if path == "/api/status":
             scan_once()
             _touch_activity()
-            self._json({"now": _last_scan["ts"], "devices": [_status[k] for k in DEV_BY_ID if k in _status]})
+            self._json({"now": _last_scan["ts"], "summary": _summary,
+                        "devices": [_status[k] for k in DEV_BY_ID if k in _status]})
         elif path == "/api/history":
             dev_id = q.get("id", "01")
             if dev_id not in DEV_BY_ID:
@@ -1252,6 +1433,13 @@ class H(http.server.BaseHTTPRequestHandler):
                 "ok": True, "id": dev_id, "name": DEV_BY_ID[dev_id]["name"],
                 "loc": DEV_BY_ID[dev_id]["loc"], "points": pts,
             })
+        elif path == "/api/logs":
+            dev_id = q.get("id", "01")
+            if dev_id not in DEV_BY_ID:
+                self._json({"ok": False, "message": "device no válido"}, 404)
+                return
+            n = max(1, min(400, int(q.get("n", "80"))))
+            self._json({"ok": True, "id": dev_id, "logs": _tail_log(dev_id, n)})
         elif path.startswith("/chart/"):
             dev_id = path.rsplit("/", 1)[-1]
             if dev_id not in DEV_BY_ID:
