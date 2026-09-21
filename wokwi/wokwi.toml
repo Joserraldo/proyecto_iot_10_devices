@@ -1,0 +1,5 @@
+[wokwi]
+version = 1
+firmware = 'build/wokwi.ino.elf'
+elf = 'build/wokwi.ino.elf'
+diagram = 'diagram.json'

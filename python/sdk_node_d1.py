@@ -69,6 +69,7 @@ def send_periodic_telemetry(client):
                 msg.content_encoding = "utf-8"
                 msg.content_type = "application/json"
                 client.send_message(msg)
+                logger.info(f"[D1] TELE {json.dumps(telemetry)}")
                 if iteration == 1 or iteration % 10 == 0:
                     logger.info(
                         f"[D1] iter={iteration} temp={telemetry['temperature']}°C "

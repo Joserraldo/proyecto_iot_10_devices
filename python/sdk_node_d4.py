@@ -116,6 +116,7 @@ def send_periodic_telemetry(client):
                 msg.content_encoding = "utf-8"
                 msg.content_type = "application/json"
                 client.send_message(msg)
+                logger.info(f"[D4] TELE {json.dumps(telemetry)}")
                 smoke_val = telemetry["smoke"]
                 flame_val = telemetry["flame"]
                 if iteration == 1 or iteration % 5 == 0 or smoke_val or flame_val:

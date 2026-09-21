@@ -121,6 +121,7 @@ def main():
             iteration += 1
             telemetry = generate_telemetry()
             payload_str = json.dumps(telemetry)
+            logger.info(f"[D7] TELE {payload_str}")
 
             # 1. Publicar vía MQTT explícito
             result = mqtt_client.publish(MQTT_TOPIC, payload_str)

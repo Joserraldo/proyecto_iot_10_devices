@@ -164,6 +164,7 @@ def main():
                     msg.content_encoding = "utf-8"
                     msg.content_type = "application/json"
                     client.send_message(msg)
+                    logger.info(f"[D6] TELE {json.dumps(telemetry)}")
                     logger.info(
                         f"[D6] iter={iteration} PM2.5={telemetry['pm25']}μg/m³ "
                         f"AQI={telemetry['aqi']} src={telemetry['api_source']}"

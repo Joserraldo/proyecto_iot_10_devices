@@ -145,6 +145,7 @@ def run(disconnect_at=None, send_to_cloud=False, iterations=None):
                     msg.content_encoding = "utf-8"
                     msg.content_type = "application/json"
                     client.send_message(msg)
+                    logger.info(f"[D8] TELE {json.dumps(payload)}")
                     logger.info(
                         f"[D8] iter={i} → Central: motion={payload['motion']} "
                         f"lux={payload['lux_nocturno']} temp={payload['temperature']}°C"

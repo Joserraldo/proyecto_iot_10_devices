@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "author": "Jose Tellez",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": -50, "left": -120, "attrs": {} },
+    { "type": "wokwi-dht22", "id": "dht", "top": -260, "left": 80, "attrs": {} },
+    { "type": "wokwi-photoresistor-sensor", "id": "ldr", "top": -260, "left": 220, "attrs": {} },
+    { "type": "wokwi-led", "id": "led", "top": -80, "left": 80, "attrs": { "color": "green" } }
+  ],
+  "connections": [
+    [ "dht:SDA", "esp:D4", "#00ff00", [] ],
+    [ "dht:VCC", "esp:3V3", "#aa0000", [] ],
+    [ "dht:GND", "esp:GND.1", "#840000", [] ],
+    [ "ldr:VCC", "esp:3V3", "#aa0000", [] ],
+    [ "ldr:GND", "esp:GND.2", "#840000", [] ],
+    [ "ldr:AO", "esp:D34", "#ffd966", [] ],
+    [ "led:A", "esp:D2", "#0000ff", [] ],
+    [ "led:C", "esp:GND.1", "#840000", [] ]
+  ],
+  "dependencies": {}
+}

@@ -66,6 +66,7 @@ def send_periodic_telemetry(client):
                 msg.content_encoding = "utf-8"
                 msg.content_type = "application/json"
                 client.send_message(msg)
+                logger.info(f"[D3] TELE {json.dumps(telemetry)}")
                 smoke_val = telemetry["smoke"]
                 flame_val = telemetry["flame"]
                 temp = telemetry["temperature"]

@@ -76,6 +76,7 @@ def forward_to_azure(payload: dict):
         msg.content_encoding = "utf-8"
         msg.content_type = "application/json"
         client.send_message(msg)
+        logger.info(f"[D2] TELE {json.dumps(payload)}")
         logger.info(
             f"[BRIDGE-D2] Reenviado a IoT Central: "
             f"temp={payload.get('temperature')} hum={payload.get('humidity')} lux={payload.get('lux')}"
