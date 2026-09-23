@@ -115,12 +115,14 @@
 | 2026-09-18 | Planning inicial | Prompt maestro y checklist creados | `Guia_tecnica_parcial.md`, `TODO.md` | José Tellez |
 | 2026-09-20 | Despliegue VM Azure (app de José) | 10/10 devices provisionados, 9 nodos corriendo, template creado vía API | `evidencias/despliegue_vm_jose_evidencia.md` | José Tellez |
 | 2026-09-20 | Guía evidencias portal | Screenshots + flujo D2 Wokwi documentados | `evidencias/guia_screenshots_portal.md` | José Tellez |
+| 2026-09-23 | Dashboard: polling eliminado, navegación temporal | BITACORA.md + commit ef85349 | `BITACORA.md` | José Tellez |
 
 ## Registro de bloqueos y decisiones
 
 | Fecha | Tipo | Descripcion | Accion o responsable | Estado |
 |---|---|---|---|---|
 | 2026-09-18 | Decision | Wokwi se ejecutara localmente; Python operativo se ejecutara en la VM de Azure. | Equipo | Registrada |
+| 2026-09-23 | Decision | Dashboard no pollinga histórico — carga a demanda (1 request al abrir). Navegación temporal 100% client-side (state.view). | Resuelto | Cerrado |
 
 ## Checklist antes de publicar en GitHub
 
