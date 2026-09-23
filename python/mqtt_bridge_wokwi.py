@@ -2,18 +2,17 @@
 """
 Bridge MQTT — Wokwi → Azure IoT Central (D2)
 ----------------------------------------------
-Escucha mensajes MQTT publicados por el simulador Wokwi (ESP32 D2)
-y los reenvía a Azure IoT Central.
+Escucha lo que publica el simulador Wokwi (ESP32 D2) y hace dos cosas:
 
-Flujo:
-  Wokwi ESP32 → publica en MQTT_BROKER/WOKWI_TOPIC
-    → este bridge suscribe y lee el mensaje
-    → agrega metadatos de origen
-    → reenvía a IoT Central via SDK
+  1. campus/ems/D2      → telemetría JSON: la reenvía a Azure IoT Central
+                          y registra la línea ``[D2] TELE {...}`` (la que el
+                          dashboard usa para el histórico de D2).
+  2. campus/ems/D2/log  → logs de texto (lo mismo que el Serial Monitor):
+                          los agrega con marca de tiempo a
+                          ``~/iotlogs/wokwi_d2.log``, que el dashboard muestra
+                          en el panel "Wokwi D2 · Serial en vivo".
 
-Requisitos:
-  - Wokwi debe estar publicando en el tópico configurado
-  - IOT_CENTRAL_DPS_CONNECTION_STRING en .env para el reenvío
+Así las evidencias del simulador quedan en la VM aunque Wokwi corra en otro equipo.
 
 Uso:
   python mqtt_bridge_wokwi.py
@@ -31,10 +30,18 @@ from azure.iot.device import IoTHubDeviceClient, Message
 WOKWI_BROKER = os.getenv("WOKWI_MQTT_BROKER", "test.mosquitto.org")
 WOKWI_PORT = int(os.getenv("WOKWI_MQTT_PORT", "1883"))
 WOKWI_TOPIC = os.getenv("WOKWI_MQTT_TOPIC", "campus/ems/D2")
+# El bridge se suscribe a todo el árbol para recibir también el sub-tópico de logs
+WOKWI_SUB = WOKWI_TOPIC.rstrip("/") + "/#"
+LOG_TOPIC = WOKWI_TOPIC.rstrip("/") + "/log"
 
 # Azure IoT Central
 CONNECTION_STRING = os.getenv("IOT_CENTRAL_DPS_CONNECTION_STRING")
 DEVICE_ID = os.getenv("IOT_CENTRAL_DEVICE_ID_D2", "campus-ems-02")
+
+# Archivo de logs del simulador (lo lee el dashboard)
+LOG_DIR = os.getenv("LOG_DIR") or os.path.expanduser("~/iotlogs")
+WOKWI_LOG = os.path.join(LOG_DIR, "wokwi_d2.log")
+LOG_ROTATE_BYTES = int(os.getenv("WOKWI_LOG_ROTATE_BYTES", str(5 * 1024 * 1024)))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,8 +52,33 @@ logger = logging.getLogger(__name__)
 
 # Cliente Azure persistente (se crea una vez, no por mensaje)
 _azure_client = None
+_log_stats = {"lines": 0, "bytes": 0}
 
 
+# ------------------------------------------------------------------ log Wokwi
+def _rotate_if_needed():
+    try:
+        if os.path.getsize(WOKWI_LOG) > LOG_ROTATE_BYTES:
+            os.replace(WOKWI_LOG, WOKWI_LOG + ".1")
+    except OSError:
+        pass
+
+
+def append_wokwi_log(line: str):
+    """Guarda una línea del Serial de Wokwi con marca de tiempo."""
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    entry = f"{stamp} | {line}\n"
+    try:
+        _rotate_if_needed()
+        with open(WOKWI_LOG, "a", encoding="utf-8") as f:
+            f.write(entry)
+        _log_stats["lines"] += 1
+        _log_stats["bytes"] += len(entry.encode("utf-8"))
+    except OSError as e:
+        logger.warning(f"[BRIDGE-D2] no se pudo escribir {WOKWI_LOG}: {e}")
+
+
+# ------------------------------------------------------------------ Azure
 def get_azure_client():
     global _azure_client
     if _azure_client is not None:
@@ -86,18 +118,36 @@ def forward_to_azure(payload: dict):
         _azure_client = None  # forzar reconexión en próximo mensaje
 
 
+# ------------------------------------------------------------------ MQTT
 def on_message(client, userdata, msg):
-    """Callback al recibir mensaje de Wokwi."""
+    """Callback al recibir mensaje de Wokwi (telemetría o log)."""
     try:
-        raw = msg.payload.decode("utf-8")
-        payload = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError) as e:
-        logger.warning(f"[BRIDGE-D2] Mensaje inválido ignorado: {e}")
+        raw = msg.payload.decode("utf-8", "replace")
+    except Exception as e:  # pragma: no cover
+        logger.warning(f"[BRIDGE-D2] payload ilegible en {msg.topic}: {e}")
         return
 
-    # Agregar metadatos del bridge
+    topic = msg.topic or ""
+
+    # ---- logs del Serial Monitor ----
+    if topic == LOG_TOPIC or topic.endswith("/log"):
+        for line in raw.splitlines():
+            line = line.strip()
+            if line:
+                append_wokwi_log(line)
+        return
+
+    # ---- telemetría ----
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as e:
+        # Algo que no es JSON ni viene del tópico de logs: lo guardamos como log.
+        logger.warning(f"[BRIDGE-D2] Mensaje inválido en {topic} ({e}) — guardado como log")
+        append_wokwi_log(f"[{topic}] {raw}")
+        return
+
     payload["_bridge"] = "wokwi-to-iotcentral"
-    payload["_source"] = "wokwi_D2"           # corregido: faltaba el = original
+    payload["_source"] = "wokwi_D2"
     payload["_timestamp"] = datetime.now(timezone.utc).isoformat()
 
     forward_to_azure(payload)
@@ -106,8 +156,8 @@ def on_message(client, userdata, msg):
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
         logger.info(f"[BRIDGE-D2] Conectado a broker {WOKWI_BROKER}:{WOKWI_PORT}")
-        client.subscribe(WOKWI_TOPIC)
-        logger.info(f"[BRIDGE-D2] Suscrito a {WOKWI_TOPIC} — esperando mensajes Wokwi...")
+        client.subscribe(WOKWI_SUB)
+        logger.info(f"[BRIDGE-D2] Suscrito a {WOKWI_SUB} — esperando mensajes Wokwi...")
     else:
         logger.error(f"[BRIDGE-D2] Fallo de conexión MQTT: código {rc}")
 
@@ -153,8 +203,9 @@ def start_bridge():
 
 
 if __name__ == "__main__":
+    os.makedirs(LOG_DIR, exist_ok=True)
     logger.info("[BRIDGE-D2] Iniciando bridge Wokwi → Azure IoT Central")
     logger.info(f"[BRIDGE-D2] Broker: {WOKWI_BROKER}:{WOKWI_PORT}")
-    logger.info(f"[BRIDGE-D2] Tópico Wokwi: {WOKWI_TOPIC}")
+    logger.info(f"[BRIDGE-D2] Tópico Wokwi: {WOKWI_TOPIC}  (logs: {LOG_TOPIC} → {WOKWI_LOG})")
     logger.info(f"[BRIDGE-D2] Dispositivo IoT Central: {DEVICE_ID}")
     start_bridge()

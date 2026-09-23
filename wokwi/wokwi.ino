@@ -1,15 +1,22 @@
 /*
   D2 - Meteo patio/cubierta - Campus UNAB
-  Wokwi ESP32: DHT22 + LDR + LED + MQTT verbose logging
-  Publica cada 30s en campus/ems/D2
-  Formato: {"temperature":XX.X,"humidity":XX.X,"lux":XX.X}
+  Wokwi ESP32: DHT22 + LDR + LED + MQTT
 
-  EVIDENCIAS: cada etapa del init y loop imprime en Serial Monitor
+  Publica:
+    campus/ems/D2      → telemetria  {"temperature":..,"humidity":..,"lux":..,"source":"wokwi-d2"}
+    campus/ems/D2/log  → log de texto (una linea por evento, mismo texto del Serial Monitor)
+
+  El bridge (python/mqtt_bridge_wokwi.py) reenvia la telemetria a Azure IoT Central y
+  guarda las lineas de log en ~/iotlogs/wokwi_d2.log, que el dashboard muestra en vivo.
+
+  Version de firmware: D2-FW 1.1 (agrega publicacion de logs por MQTT)
 */
 
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <DHT.h>
+
+#define FW_VERSION "D2-FW 1.1"
 
 // --- Configuracion WiFi (Wokwi-GUEST para simulador) ---
 const char* ssid     = "Wokwi-GUEST";
@@ -19,6 +26,7 @@ const char* password = "";
 const char* mqtt_server  = "test.mosquitto.org";
 const int   mqtt_port    = 1883;
 const char* mqtt_topic   = "campus/ems/D2";
+const char* mqtt_log     = "campus/ems/D2/log";
 const char* client_id    = "campus-ems-02";
 
 // --- Sensores ---
@@ -27,28 +35,51 @@ const char* client_id    = "campus-ems-02";
 #define LDR_PIN 34
 #define LED_PIN 2
 
+// Curva del fotorresistor (valores tipicos del modulo wokwi-photoresistor-sensor):
+// RL10 = resistencia a 10 lux, GAMMA = pendiente log-log de la curva lux/resistencia.
+// Sin estos dos defines el sketch no compilaba.
+#define LDR_RL10  50.0
+#define LDR_GAMMA 0.7
+
 DHT dht(DHTPIN, DHTTYPE);
 
 WiFiClient   espClient;
 PubSubClient mqttClient(espClient);
 
-// --- Contadores para logs ---
-unsigned long loopCount = 0;
+unsigned long loopCount    = 0;
+unsigned long bootMillis   = 0;
+int           logDropped   = 0;
 
 void printDivider() {
   Serial.println("========================================");
 }
 
+// ---------------------------------------------------------------------------
+// LOG: imprime en el Serial Monitor Y publica la misma linea por MQTT al
+// topico de logs. Asi el dashboard ve el serial de Wokwi sin depender de que
+// la simulacion corra en el mismo equipo que el dashboard.
+// ---------------------------------------------------------------------------
+void LOG(const String &msg) {
+  Serial.println(msg);
+  if (!mqttClient.connected()) {
+    return;
+  }
+  if (!mqttClient.publish(mqtt_log, msg.c_str())) {
+    logDropped++;
+  }
+}
+
+void LOG1(const char *a, const String &b) {
+  LOG(String(a) + b);
+}
+
 // ============ WIFI ============
 void connectWiFi() {
-  Serial.println("[WIFI] Iniciando conexion...");
-  Serial.print("[WIFI] SSID: ");
-  Serial.println(ssid);
-  Serial.print("[WIFI] Password: ");
-  Serial.println(strlen(password) > 0 ? password : "(vacio - Wokwi-GUEST)");
-  
+  LOG("[WIFI] Iniciando conexion...");
+  LOG1("[WIFI] SSID: ", ssid);
+
   WiFi.begin(ssid, password);
-  
+
   int attempts = 0;
   Serial.print("[WIFI] Intentando conectar");
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
@@ -56,50 +87,41 @@ void connectWiFi() {
     Serial.print(".");
     attempts++;
   }
-  
+  Serial.println();
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println();
     printDivider();
-    Serial.println("[WIFI] ✓ CONEXION EXITOSA");
-    Serial.print("[WIFI] IP local: ");
-    Serial.println(WiFi.localIP());
-    Serial.print("[WIFI] Gateway: ");
-    Serial.println(WiFi.gatewayIP());
-    Serial.print("[WIFI] RSSI: ");
-    Serial.print(WiFi.RSSI());
-    Serial.println(" dBm");
+    LOG("[WIFI] OK - CONEXION EXITOSA");
+    LOG1("[WIFI] IP local: ", WiFi.localIP().toString());
+    LOG1("[WIFI] Gateway: ", WiFi.gatewayIP().toString());
+    LOG1("[WIFI] RSSI: ", String(WiFi.RSSI()) + " dBm");
     printDivider();
   } else {
-    Serial.println();
-    Serial.println("[WIFI] ✗ FALLO - continuando sin red");
+    LOG("[WIFI] FALLO - continuando sin red");
   }
 }
 
 // ============ MQTT ============
 void connectMQTT() {
-  Serial.println("[MQTT] Iniciando conexion a broker...");
-  Serial.print("[MQTT] Server: ");
-  Serial.println(mqtt_server);
-  Serial.print("[MQTT] Puerto: ");
-  Serial.println(mqtt_port);
-  Serial.print("[MQTT] Topic: ");
-  Serial.println(mqtt_topic);
-  Serial.print("[MQTT] Client ID: ");
-  Serial.println(client_id);
-  
+  LOG("[MQTT] Iniciando conexion a broker...");
+  LOG1("[MQTT] Server: ", mqtt_server);
+  LOG1("[MQTT] Topic telemetria: ", mqtt_topic);
+  LOG1("[MQTT] Topic logs: ", mqtt_log);
+  LOG1("[MQTT] Client ID: ", client_id);
+
   int attempts = 0;
   while (!mqttClient.connected()) {
     Serial.print("[MQTT] Intento ");
     Serial.print(++attempts);
     Serial.print("... ");
-    
+
     if (mqttClient.connect(client_id)) {
       Serial.println("OK");
       digitalWrite(LED_PIN, HIGH);
       printDivider();
-      Serial.println("[MQTT] ✓ CONEXION EXITOSA AL BROKER");
-      Serial.print("[MQTT] Estado: ");
-      Serial.println(mqttClient.state());
+      LOG("[MQTT] OK - CONEXION EXITOSA AL BROKER");
+      LOG1("[MQTT] Estado: ", String(mqttClient.state()));
+      LOG1("[MQTT] Uptime ms: ", String(millis()));
       printDivider();
     } else {
       Serial.print("FALLO rc=");
@@ -124,178 +146,127 @@ void connectMQTT() {
 float readLux() {
   int analogValue = analogRead(LDR_PIN);
   float voltage   = analogValue / 4095.0 * 3.3;
-  
-  Serial.print("[LDR] Raw ADC: ");
-  Serial.print(analogValue);
-  Serial.print(" | Voltage: ");
-  Serial.print(voltage, 3);
-  Serial.print("V | ");
-  
+
   if (voltage <= 0.001) voltage = 0.001;
   if (voltage >= 3.299) voltage = 3.299;
-  
+
   float resistance = 10000.0 * (3.3 - voltage) / voltage;
   if (!isfinite(resistance) || resistance <= 0) {
-    Serial.println("LDR error - retornando 0");
+    LOG("[LDR] error de resistencia - retornando 0");
     return 0.0;
   }
-  
+
   float lux = pow(LDR_RL10 * 1e3 * pow(10.0, LDR_GAMMA) / resistance, 1.0 / LDR_GAMMA);
   if (!isfinite(lux)) {
-    Serial.println("LUX calculo error - retornando 0");
+    LOG("[LDR] error de calculo de lux - retornando 0");
     return 0.0;
   }
-  
-  Serial.print("R=");
-  Serial.print(resistance, 1);
-  Serial.print(" ohm | Lux: ");
-  Serial.println(lux, 1);
-  
+
+  LOG("[LDR] ADC=" + String(analogValue) + " V=" + String(voltage, 3) +
+      " R=" + String(resistance, 1) + "ohm lux=" + String(lux, 1));
   return lux;
 }
 
-void readDHT(float& temp, float& hum) {
-  hum = dht.readHumidity();
+void readDHT(float &temp, float &hum) {
+  hum  = dht.readHumidity();
   temp = dht.readTemperature();
-  
-  Serial.print("[DHT22] Temperatura: ");
-  if (isnan(temp)) {
-    Serial.println("ERROR");
-  } else {
-    Serial.print(temp, 1);
-    Serial.println(" C");
-  }
-  
-  Serial.print("[DHT22] Humedad: ");
-  if (isnan(hum)) {
-    Serial.println("ERROR");
-  } else {
-    Serial.print(hum, 1);
-    Serial.println(" %");
-  }
+
+  LOG("[DHT22] temperatura=" + (isnan(temp) ? String("ERROR") : String(temp, 1) + "C") +
+      " humedad=" + (isnan(hum) ? String("ERROR") : String(hum, 1) + "%"));
 }
 
 // ============ PUBLICAR ============
 void publishData(float temp, float hum, float lux) {
-  char payload[128];
+  char payload[160];
   snprintf(payload, sizeof(payload),
            "{\"temperature\":%.1f,\"humidity\":%.1f,\"lux\":%.1f,\"source\":\"wokwi-d2\"}",
            temp, hum, lux);
 
-  Serial.print("[PUB] Payload: ");
-  Serial.println(payload);
-  
+  LOG1("[PUB] payload: ", payload);
+
   bool ok = mqttClient.publish(mqtt_topic, payload);
-  if (ok) {
-    Serial.println("[PUB] ✓ Mensaje publicado exitosamente");
-  } else {
-    Serial.println("[PUB] ✗ ERROR - no se pudo publicar");
-  }
+  LOG(ok ? "[PUB] OK - mensaje publicado" : "[PUB] ERROR - no se pudo publicar");
 }
 
 // ============ SETUP ============
 void setup() {
   Serial.begin(115200);
   delay(500);
-  
+  bootMillis = millis();
+
   printDivider();
-  Serial.println("[SETUP] ===== INICIANDO ESP32 D2 =====");
-  Serial.println("[SETUP] Campus UNAB - Wokwi ESP32 Simulator");
+  LOG(String("[SETUP] ===== INICIANDO ESP32 D2 ====="));
+  LOG1("[SETUP] firmware: ", FW_VERSION);
+  LOG("[SETUP] Campus UNAB - Wokwi ESP32 Simulator");
   printDivider();
-  
-  // LED
+
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
-  Serial.println("[SETUP] LED estado: OFF (esperando conexion MQTT)");
-  
-  // DHT
-  Serial.print("[SETUP] Iniciando DHT22 en pin ");
-  Serial.println(DHTPIN);
+  LOG("[SETUP] LED OFF (esperando conexion MQTT)");
+
+  LOG1("[SETUP] iniciando DHT22 en pin ", String(DHTPIN));
   dht.begin();
-  Serial.println("[SETUP] DHT22 inicializado");
-  
-  // Sensor LDR
+  LOG("[SETUP] DHT22 inicializado");
+
   pinMode(LDR_PIN, INPUT);
-  Serial.print("[SETUP] LDR configurado en pin analogico ");
-  Serial.println(LDR_PIN);
-  
-  // WiFi
+  LOG1("[SETUP] LDR configurado en pin analogico ", String(LDR_PIN));
+
   printDivider();
-  Serial.println("[SETUP] --- FASE 1: WIFI ---");
+  LOG("[SETUP] --- FASE 1: WIFI ---");
   connectWiFi();
-  
-  // MQTT
+
   printDivider();
-  Serial.println("[SETUP] --- FASE 2: MQTT ---");
+  LOG("[SETUP] --- FASE 2: MQTT ---");
   mqttClient.setServer(mqtt_server, mqtt_port);
   mqttClient.setKeepAlive(60);
+  mqttClient.setBufferSize(512);
   connectMQTT();
-  
-  // Test de sensores
+
   printDivider();
-  Serial.println("[SETUP] --- TEST SENSORES ---");
+  LOG("[SETUP] --- TEST SENSORES ---");
   float t, h;
   readDHT(t, h);
   float l = readLux();
-  Serial.println("[SETUP] Test sensores completado");
-  
+  LOG1("[SETUP] test completado, lux=", String(l, 1));
+
   printDivider();
-  Serial.println("[SETUP] ===== SETUP COMPLETO =====");
-  Serial.println("[SETUP] Dispositivo listo para loop()");
+  LOG("[SETUP] ===== SETUP COMPLETO =====");
   printDivider();
 }
 
 // ============ LOOP ============
 void loop() {
   loopCount++;
-  
-  printDivider();
-  Serial.print("[LOOP] Iteracion #");
-  Serial.println(loopCount);
-  
-  // Mantener conexion MQTT
+
+  LOG1("[LOOP] iteracion #", String(loopCount));
+
   if (!mqttClient.connected()) {
-    Serial.println("[LOOP] MQTT desconectado - reconectando...");
+    LOG("[LOOP] MQTT desconectado - reconectando...");
     digitalWrite(LED_PIN, LOW);
     connectMQTT();
   } else {
-    Serial.println("[LOOP] MQTT conectado - OK");
+    LOG("[LOOP] MQTT conectado - OK");
     mqttClient.loop();
   }
-  
-  // Lectura sensores
-  printDivider();
-  Serial.println("[LOOP] --- LEYENDO SENSORES ---");
-  
+
+  LOG("[LOOP] --- leyendo sensores ---");
   float h = dht.readHumidity();
   float t = dht.readTemperature();
   float lux = readLux();
-  
+
   if (isnan(h) || isnan(t)) {
-    Serial.println("[LOOP] ✗ Error leyendo DHT22");
-    Serial.println("[LOOP] Intentando re-inicializar DHT...");
+    LOG("[LOOP] ERROR leyendo DHT22 - re-inicializando sensor");
     dht.begin();
   } else {
-    printDivider();
-    Serial.println("[LOOP] --- PUBLICANDO DATOS ---");
-    Serial.print("[LOOP] Temperatura: ");
-    Serial.print(t, 1);
-    Serial.println(" C");
-    Serial.print("[LOOP] Humedad: ");
-    Serial.print(h, 1);
-    Serial.println(" %");
-    Serial.print("[LOOP] Luminosidad: ");
-    Serial.print(lux, 1);
-    Serial.println(" lux");
-    
+    LOG("[LOOP] --- publicando datos ---");
+    LOG1("[LOOP] temperatura: ", String(t, 1) + " C");
+    LOG1("[LOOP] humedad: ", String(h, 1) + " %");
+    LOG1("[LOOP] luminosidad: ", String(lux, 1) + " lux");
     publishData(t, h, lux);
   }
-  
-  printDivider();
-  Serial.print("[LOOP] Durmiendo 30s... proxima lectura en ");
-  Serial.print(millis() / 1000);
-  Serial.println("s");
-  printDivider();
-  
+
+  LOG1("[LOOP] uptime=", String(millis() / 1000) + "s logs_perdidos=" + String(logDropped));
+  LOG("[LOOP] durmiendo 30s...");
+
   delay(30000);
 }

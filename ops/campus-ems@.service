@@ -1,0 +1,22 @@
+[Unit]
+Description=Campus EMS — nodo %i (flota IoT Central)
+Documentation=file:/home/azureuser/proyecto_iot_10_devices/HANDOFF.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=azureuser
+WorkingDirectory=/home/azureuser/proyecto_iot_10_devices/python
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/bin/bash /home/azureuser/proyecto_iot_10_devices/ops/start-device.sh %i
+# El dashboard lee ~/iotlogs/<nodo>.log: por eso la salida va a archivo y no al journal.
+StandardOutput=append:/home/azureuser/iotlogs/%i.log
+StandardError=append:/home/azureuser/iotlogs/%i.log
+Restart=always
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
