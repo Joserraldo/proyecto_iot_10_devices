@@ -4,24 +4,27 @@ REM run_all_devices.bat — Lanza los 9 dispositivos Python en
 REM ventanas separadas. Cada ventana mantiene el dispositivo
 REM conectado a Azure IoT Central de forma continua.
 REM
-REM USO: doble clic en este archivo desde el repo
-REM Para detener: cerrar cada ventana o Ctrl+C en cada una
+REM USO:
+REM   1) Copiar devices.env.example a devices.env y pegar los
+REM      connection strings de TU app de IoT Central (DPS).
+REM   2) Doble clic en este archivo desde el repo.
+REM Para detener: cerrar cada ventana o Ctrl+C en cada una.
 REM ============================================================
 
-set REPO=C:\Users\buitr\OneDrive\trabajos\Nueva carpeta\proyecto_iot_10_devices
-set PY=%REPO%\python
+set REPO=%~dp0
+set PY=%REPO%python
 
-set HUB=iotc-ae3518fb-6e3f-48c4-b0c4-d6886902134d.azure-devices.net
+REM Cargar credenciales desde devices.env (NO versionado)
+if not exist "%REPO%devices.env" (
+  echo [ERROR] No existe devices.env. Copia devices.env.example y completa tus credenciales.
+  exit /b 1
+)
+for /f "usebackq delims=" %%a in ("%REPO%devices.env") do set "%%a"
 
-set CS_D1=HostName=%HUB%;DeviceId=campus-ems-01;SharedAccessKey=P4JKcFZTDIbJsnCoM0EeWXIDCPHQXYarzNRl3HNHF8c=
-set CS_D3=HostName=%HUB%;DeviceId=campus-ems-03;SharedAccessKey=lOBodmNRKAtsaiHUisLEHz7M0tEY9Wt+wWEsK1MZKeE=
-set CS_D4=HostName=%HUB%;DeviceId=campus-ems-04;SharedAccessKey=Tfv/4mKXnxBs+P2Btm50QdAd0smxqgk3KgpNFG38muA=
-set CS_D5=HostName=%HUB%;DeviceId=campus-ems-05;SharedAccessKey=5lcslo6iqnP6X7x9+sapp4/8mKu3/SnWKZwF9xUAzKY=
-set CS_D6=HostName=%HUB%;DeviceId=campus-ems-06;SharedAccessKey=71JgPW2JaNB4iZ1OqCh9Top7wA9/l1JdEI/wXw7Kqos=
-set CS_D7=HostName=%HUB%;DeviceId=campus-ems-07;SharedAccessKey=iJnTW8/0Fi7FKbN/Gf1t1KQz/Q+siYQ8plFXDCIab68=
-set CS_D8=HostName=%HUB%;DeviceId=campus-ems-08;SharedAccessKey=cXiloZwxpstPN1U58AFpZJWOMnzLMmJg2Cc6EcE+Wqs=
-set CS_D9=HostName=%HUB%;DeviceId=campus-ems-09;SharedAccessKey=YYFdBobnKSI7/82WpTVEYyhIzVBXQww1bazap0OiVh0=
-set CS_D10=HostName=%HUB%;DeviceId=campus-ems-10;SharedAccessKey=JTAVBdPIhtCUXUun2M7CnOpT7UO6LZ2JuD5ltRvaoXo=
+if not defined CS_D1 (
+  echo [ERROR] devices.env no tiene CS_D1..CS_D10. Revisa el archivo.
+  exit /b 1
+)
 
 echo Iniciando flota campus-ems...
 

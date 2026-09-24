@@ -7,7 +7,9 @@ ENV/
 # Environment variables (real secrets never pushed; .env.example IS pushed)
 .env
 .env.*
+devices.env
 !.env.example
+!devices.env.example
 
 # Logs
 logs/
@@ -25,6 +27,7 @@ iot-central-export/
 
 # Wokwi
 wokwi-diagram.json
+wokwi/build/
 
 # OS
 .DS_Store

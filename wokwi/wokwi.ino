@@ -16,7 +16,7 @@
 #include <PubSubClient.h>
 #include <DHT.h>
 
-#define FW_VERSION "D2-FW 1.1"
+#define FW_VERSION "D2-FW 1.2"
 
 // --- Configuracion WiFi (Wokwi-GUEST para simulador) ---
 const char* ssid     = "Wokwi-GUEST";
@@ -35,6 +35,11 @@ const char* client_id    = "campus-ems-02";
 #define LDR_PIN 34
 #define LED_PIN 2
 
+// --- Botones de trigger (Wokwi) ---
+#define BTN_TEMP_PIN   5   // GPIO5  -> BOTON A: spike de temperatura
+#define BTN_ASESOR_PIN 18  // GPIO18 -> BOTON B: llamar asesor
+#define TEMP_SPIKE_OFFSET 12.0  // grados que se suman en el spike
+
 // Curva del fotorresistor (valores tipicos del modulo wokwi-photoresistor-sensor):
 // RL10 = resistencia a 10 lux, GAMMA = pendiente log-log de la curva lux/resistencia.
 // Sin estos dos defines el sketch no compilaba.
@@ -49,6 +54,14 @@ PubSubClient mqttClient(espClient);
 unsigned long loopCount    = 0;
 unsigned long bootMillis   = 0;
 int           logDropped   = 0;
+
+// --- Estado botones / debounce ---
+bool  lastBtnTemp   = HIGH;
+bool  lastBtnAsesor = HIGH;
+unsigned long lastBtnTempDebounce   = 0;
+unsigned long lastBtnAsesorDebounce = 0;
+const unsigned long DEBOUNCE_MS = 50;
+float tempSpikeRemaining = 0.0;   // >0 => spike de temperatura activo por N ciclos
 
 void printDivider() {
   Serial.println("========================================");
@@ -188,6 +201,59 @@ void publishData(float temp, float hum, float lux) {
   LOG(ok ? "[PUB] OK - mensaje publicado" : "[PUB] ERROR - no se pudo publicar");
 }
 
+// ============ TRIGGERS (BOTONES) ============
+// BOTON A: spike de temperatura (simula alarma de calor).
+void triggerTempSpike() {
+  tempSpikeRemaining = 3;  // activo durante los proximos 3 ciclos
+  printDivider();
+  LOG("[TRIGGER] ===== SPIKE DE TEMPERATURA ===== (BOTON A)");
+  LOG("[TRIGGER] Alarma de calor activada, inyectando pico de temperatura");
+  LOG1("[TRIGGER] Offset aplicado: +", String(TEMP_SPIKE_OFFSET) + " C");
+  printDivider();
+}
+
+// BOTON B: llamar asesor (envia evento a consola/log).
+void triggerCallAdvisor() {
+  printDivider();
+  LOG("[TRIGGER] ===== LLAMAR ASESOR ===== (BOTON B)");
+  LOG("[TRIGGER] hola, soy un boton - llamar asesor");
+  LOG("[TRIGGER] Solicitando asistencia al asesor de campus...");
+  if (mqttClient.connected()) {
+    const char* evt = "{\"event\":\"call_advisor\",\"message\":\"hola, soy un boton - llamar asesor\",\"source\":\"wokwi-d2\"}";
+    mqttClient.publish("campus/ems/D2/event", evt);
+    LOG1("[TRIGGER] Evento publicado: ", evt);
+  } else {
+    LOG("[TRIGGER] MQTT no conectado - evento solo en consola");
+  }
+  printDivider();
+}
+
+// Lee ambos botones con debounce y dispara los triggers en flanco de bajada.
+void checkButtons() {
+  unsigned long now = millis();
+
+  bool btnTemp   = digitalRead(BTN_TEMP_PIN);
+  bool btnAsesor = digitalRead(BTN_ASESOR_PIN);
+
+  if (btnTemp != lastBtnTemp && (now - lastBtnTempDebounce) > DEBOUNCE_MS) {
+    lastBtnTempDebounce = now;
+    lastBtnTemp = btnTemp;
+    if (btnTemp == LOW) {
+      LOG("[BTN] BOTON A (SPIKE TEMP) presionado");
+      triggerTempSpike();
+    }
+  }
+
+  if (btnAsesor != lastBtnAsesor && (now - lastBtnAsesorDebounce) > DEBOUNCE_MS) {
+    lastBtnAsesorDebounce = now;
+    lastBtnAsesor = btnAsesor;
+    if (btnAsesor == LOW) {
+      LOG("[BTN] BOTON B (LLAMAR ASESOR) presionado");
+      triggerCallAdvisor();
+    }
+  }
+}
+
 // ============ SETUP ============
 void setup() {
   Serial.begin(115200);
@@ -210,6 +276,12 @@ void setup() {
 
   pinMode(LDR_PIN, INPUT);
   LOG1("[SETUP] LDR configurado en pin analogico ", String(LDR_PIN));
+
+  pinMode(BTN_TEMP_PIN, INPUT_PULLUP);
+  pinMode(BTN_ASESOR_PIN, INPUT_PULLUP);
+  LOG("[SETUP] Botones configurados (INPUT_PULLUP)");
+  LOG1("[SETUP] BOTON A (spike temp) en pin D", String(BTN_TEMP_PIN));
+  LOG1("[SETUP] BOTON B (llamar asesor) en pin D", String(BTN_ASESOR_PIN));
 
   printDivider();
   LOG("[SETUP] --- FASE 1: WIFI ---");
@@ -250,6 +322,8 @@ void loop() {
   }
 
   LOG("[LOOP] --- leyendo sensores ---");
+  checkButtons();
+
   float h = dht.readHumidity();
   float t = dht.readTemperature();
   float lux = readLux();
@@ -258,6 +332,13 @@ void loop() {
     LOG("[LOOP] ERROR leyendo DHT22 - re-inicializando sensor");
     dht.begin();
   } else {
+    // Aplicar spike de temperatura si BOTON A fue presionado recientemente.
+    if (tempSpikeRemaining > 0) {
+      t += TEMP_SPIKE_OFFSET;
+      tempSpikeRemaining--;
+      LOG1("[LOOP] *** SPIKE ACTIVO *** temperatura inyectada: ", String(t, 1) + " C (quedan " + String(tempSpikeRemaining) + " ciclos)");
+    }
+
     LOG("[LOOP] --- publicando datos ---");
     LOG1("[LOOP] temperatura: ", String(t, 1) + " C");
     LOG1("[LOOP] humedad: ", String(h, 1) + " %");
